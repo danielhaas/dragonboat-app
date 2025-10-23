@@ -13,7 +13,7 @@ A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, 
 
 ### Automatic Piece Detection
 - Pieces are defined by paddling activity (first stroke to last stroke)
-- Automatically ends piece 30 seconds after the last stroke
+- Automatically ends piece 10 seconds after the last stroke
 - Tracks individual pieces separately
 - Each piece records:
   - Time duration (from first to last stroke)
@@ -77,7 +77,7 @@ monkeyc -d fenix6xpro -f monkey.jungle -o dragonboat.prg -y /path/to/developer_k
 ### During Activity
 - **UP/DOWN buttons**: Switch between view modes
 - **Activity auto-starts**: GPS and accelerometer tracking begins immediately
-- **Pieces auto-detect**: First stroke starts a piece; piece ends 30 seconds after last stroke
+- **Pieces auto-detect**: First stroke starts a piece; piece ends 10 seconds after last stroke
 
 ### Ending Activity
 - **Press BACK button**: Shows confirmation to save or discard
@@ -95,7 +95,7 @@ monkeyc -d fenix6xpro -f monkey.jungle -o dragonboat.prg -y /path/to/developer_k
 ### Piece Detection
 - Stroke-based detection: pieces defined by active paddling
 - First stroke starts a new piece
-- Piece ends 30 seconds after the last detected stroke
+- Piece ends 10 seconds after the last detected stroke
 - Automatically tracks time from first to last stroke
 - New piece starts automatically when paddling resumes
 
@@ -110,7 +110,7 @@ monkeyc -d fenix6xpro -f monkey.jungle -o dragonboat.prg -y /path/to/developer_k
 Edit `DragonBoatModel.mc` to modify:
 - `ACCEL_THRESHOLD`: Stroke detection sensitivity (default: 1.5g)
 - `STROKE_COOLDOWN`: Minimum time between strokes (default: 200ms)
-- `PIECE_END_DURATION`: Time after last stroke to end piece (default: 30000ms / 30 seconds)
+- `PIECE_END_DURATION`: Time after last stroke to end piece (default: 10000ms / 10 seconds)
 
 ### Changing Display
 Edit `DragonBoatView.mc` to customize:

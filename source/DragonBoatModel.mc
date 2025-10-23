@@ -52,7 +52,7 @@ class DragonBoatModel {
 
     // Piece detection - based on strokes
     var lastPieceStrokeTime; // Time of last stroke in current piece
-    const PIECE_END_DURATION = 30000; // 30 seconds in milliseconds
+    const PIECE_END_DURATION = 10000; // 10 seconds in milliseconds
 
     // Stroke detection
     var lastAccelData;
@@ -203,7 +203,7 @@ class DragonBoatModel {
         }
     }
 
-    // Check if piece should end (30 seconds since last stroke)
+    // Check if piece should end (10 seconds since last stroke)
     function checkPieceEnd() {
         if (!pieceActive || currentPiece == null) {
             return;
@@ -211,7 +211,7 @@ class DragonBoatModel {
 
         var currentTime = System.getTimer();
 
-        // Check if 30 seconds have passed since last stroke
+        // Check if 10 seconds have passed since last stroke
         if (lastPieceStrokeTime > 0 && (currentTime - lastPieceStrokeTime >= PIECE_END_DURATION)) {
             // End the current piece
             endPiece();
