@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+*.prg
+*.prg.debug.xml
+
+# Developer keys (keep these private!)
+developer_key
+developer_key.pem
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
