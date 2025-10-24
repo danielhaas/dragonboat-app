@@ -52,27 +52,27 @@ class DragonBoatView extends WatchUi.View {
         var width = dc.getWidth();
         var height = dc.getHeight();
         var centerX = width / 2;
-        var y = 28;
+        var y = 25;
 
         // Title
         dc.drawText(centerX, 8, Graphics.FONT_TINY, "OVERALL", Graphics.TEXT_JUSTIFY_CENTER);
 
         // Speed
         dc.drawText(centerX, y, Graphics.FONT_SMALL, "Speed", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 42;
+        y += 30;
         var speedKmh = model.currentSpeed * 3.6; // m/s to km/h
-        dc.drawText(centerX, y, Graphics.FONT_NUMBER_MEDIUM, speedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 58;
+        dc.drawText(centerX, y, Graphics.FONT_MEDIUM, speedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 35;
 
         // Stroke rate
         dc.drawText(centerX, y, Graphics.FONT_SMALL, "Stroke Rate", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 42;
+        y += 35;
         dc.drawText(centerX, y, Graphics.FONT_MEDIUM, model.strokeRate.format("%.0f") + " spm", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 50;
+        y += 40;
 
         // Distance
         dc.drawText(centerX, y, Graphics.FONT_SMALL, "Distance", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 38;
+        y += 30;
         dc.drawText(centerX, y, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f") + " km", Graphics.TEXT_JUSTIFY_CENTER);
     }
 
@@ -81,38 +81,32 @@ class DragonBoatView extends WatchUi.View {
         var width = dc.getWidth();
         var height = dc.getHeight();
         var centerX = width / 2;
-        var y = 25;
+        var quarterX = width / 4;
+        var threeQuarterX = (width * 3) / 4;
 
         // Title
-        dc.drawText(centerX, 10, Graphics.FONT_SMALL, "CURRENT PIECE", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(centerX, 8, Graphics.FONT_TINY, "CURRENT PIECE", Graphics.TEXT_JUSTIFY_CENTER);
 
         if (model.currentPiece != null && model.pieceActive) {
-            // Time
-            dc.drawText(centerX, y, Graphics.FONT_MEDIUM, "Time", Graphics.TEXT_JUSTIFY_CENTER);
-            y += 30;
-            var pieceDuration = model.currentPiece.getCurrentDuration();
+            var pieceDuration = model.currentPiece.getCurrentDuration().toNumber();
             var minutes = pieceDuration / 60;
             var seconds = pieceDuration % 60;
-            dc.drawText(centerX, y, Graphics.FONT_NUMBER_MEDIUM, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
-            y += 40;
 
-            // Strokes
-            dc.drawText(centerX, y, Graphics.FONT_MEDIUM, "Strokes", Graphics.TEXT_JUSTIFY_CENTER);
-            y += 30;
-            dc.drawText(centerX, y, Graphics.FONT_NUMBER_HOT, model.currentPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_CENTER);
-            y += 45;
+            // Large Time Display at top
+            dc.drawText(centerX, 30, Graphics.FONT_SMALL, "Time", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(centerX, 45, Graphics.FONT_NUMBER_HOT, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
 
-            // Distance
-            dc.drawText(centerX, y, Graphics.FONT_MEDIUM, "Distance", Graphics.TEXT_JUSTIFY_CENTER);
-            y += 25;
-            dc.drawText(centerX, y, Graphics.FONT_MEDIUM, (model.currentPiece.distance / 1000.0).format("%.2f") + " km", Graphics.TEXT_JUSTIFY_CENTER);
-            y += 35;
+            // Middle row: Strokes (left) and Distance (right)
+            dc.drawText(quarterX, 125, Graphics.FONT_XTINY, "Strokes", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 135, Graphics.FONT_NUMBER_MEDIUM, model.currentPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
-            // Max Speed
-            dc.drawText(centerX, y, Graphics.FONT_MEDIUM, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
-            y += 25;
+            dc.drawText(threeQuarterX, 125, Graphics.FONT_XTINY, "m", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, model.currentPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
+
+            // Bottom: Max Speed
+            dc.drawText(centerX, 195, Graphics.FONT_SMALL, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
             var maxSpeedKmh = model.currentPiece.maxSpeed * 3.6;
-            dc.drawText(centerX, y, Graphics.FONT_MEDIUM, maxSpeedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(centerX, 220, Graphics.FONT_MEDIUM, maxSpeedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
         } else {
             // No active piece
             dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM, "Start paddling...", Graphics.TEXT_JUSTIFY_CENTER);
@@ -125,7 +119,7 @@ class DragonBoatView extends WatchUi.View {
         var height = dc.getHeight();
         var centerX = width / 2;
         var y = 28;
-        var lineHeight = 22;
+        var lineHeight = 19;
         var margin = 45;
 
         // Title
@@ -153,7 +147,7 @@ class DragonBoatView extends WatchUi.View {
         var minutes = model.elapsedTime / 60;
         var seconds = model.elapsedTime % 60;
         dc.drawText(width - margin, y, Graphics.FONT_XTINY, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_RIGHT);
-        y += lineHeight + 8;
+        y += lineHeight + 7;
 
         // Current piece
         dc.drawText(centerX, y, Graphics.FONT_XTINY, "-- Piece --", Graphics.TEXT_JUSTIFY_CENTER);
@@ -161,7 +155,7 @@ class DragonBoatView extends WatchUi.View {
 
         if (model.currentPiece != null && model.pieceActive) {
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Time:", Graphics.TEXT_JUSTIFY_LEFT);
-            var pieceDuration = model.currentPiece.getCurrentDuration();
+            var pieceDuration = model.currentPiece.getCurrentDuration().toNumber();
             var pieceMinutes = pieceDuration / 60;
             var pieceSeconds = pieceDuration % 60;
             dc.drawText(width - margin, y, Graphics.FONT_XTINY, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_RIGHT);
@@ -191,62 +185,73 @@ class DragonBoatView extends WatchUi.View {
         var threeQuarterX = (width * 3) / 4;
 
         // Row 1: Stroke Rate (left) and Heart Rate (right) - colored boxes (MUCH TALLER)
-        var boxWidth = (width - 15) / 2;
+        var boxWidth = (width - 50) / 2;
         var boxY = 8;
         var boxHeight = 75;
 
-        // Stroke Rate box (green background) - covers SPM and km/h
+        // Stroke Rate box (green background) - covers SPM and km/h - moved even more right
         dc.setColor(Graphics.COLOR_DK_GREEN, Graphics.COLOR_DK_GREEN);
-        dc.fillRectangle(5, boxY, boxWidth, boxHeight);
+        dc.fillRectangle(25, boxY, boxWidth, boxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(5 + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "SPM", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(5 + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, model.strokeRate.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(5 + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "km/h", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(25 + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "SPM", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(25 + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, model.strokeRate.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(25 + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "km/h", Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Heart Rate box (blue background) - covers HR and Avg
+        // Heart Rate box (blue background) - covers HR and Avg - moved even more left
         dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_BLUE);
-        dc.fillRectangle(10 + boxWidth, boxY, boxWidth, boxHeight);
+        dc.fillRectangle(25 + boxWidth, boxY, boxWidth, boxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(10 + boxWidth + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
         var hrDisplay = model.heartRate > 0 ? model.heartRate.toString() : "--";
-        dc.drawText(10 + boxWidth + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, hrDisplay, Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(10 + boxWidth + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, hrDisplay, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Row 2: Speed values (below boxes)
+        // Row 2: Speed labels and values (below boxes) - values moved even higher
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(quarterX, 85, Graphics.FONT_XTINY, "Speed", Graphics.TEXT_JUSTIFY_CENTER);
         var currentSpeedKmh = model.currentSpeed * 3.6;
-        dc.drawText(quarterX, 95, Graphics.FONT_NUMBER_MEDIUM, currentSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(quarterX, 90, Graphics.FONT_NUMBER_MEDIUM, currentSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
 
+        dc.drawText(threeQuarterX, 85, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
         var avgSpeed = 0.0;
         if (model.elapsedTime > 0) {
             avgSpeed = (model.totalDistance / model.elapsedTime) * 3.6;
         }
-        dc.drawText(threeQuarterX, 95, Graphics.FONT_NUMBER_MEDIUM, avgSpeed.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 90, Graphics.FONT_NUMBER_MEDIUM, avgSpeed.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Row 3: Time and Distance - Labels above values (more spacing)
-        dc.drawText(quarterX, 145, Graphics.FONT_XTINY, "Time", Graphics.TEXT_JUSTIFY_CENTER);
+        // Row 3: Time and Distance - moved higher
+        dc.drawText(quarterX, 150, Graphics.FONT_XTINY, "Time", Graphics.TEXT_JUSTIFY_CENTER);
         var minutes = model.elapsedTime / 60;
         var seconds = model.elapsedTime % 60;
-        dc.drawText(quarterX, 173, Graphics.FONT_MEDIUM, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(quarterX, 162, Graphics.FONT_MEDIUM, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        dc.drawText(threeQuarterX, 145, Graphics.FONT_XTINY, "km", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(threeQuarterX, 173, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 150, Graphics.FONT_XTINY, "km", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 162, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Row 4: Pieces and Current Piece - Bottom of screen
-        var piecesBoxWidth = 65;
+        // Row 4: Pieces and Current Piece - Bottom of screen, extending to bottom
+        var bottomBoxWidth = (width - 25) / 2;
+        var bottomY = 218;
+        var bottomBoxHeight = height - bottomY; // Extend to bottom of screen
+
+        // Pieces box - left side at bottom with purple background
         dc.setColor(Graphics.COLOR_PURPLE, Graphics.COLOR_PURPLE);
-        dc.fillRectangle(8, 205, piecesBoxWidth, 30);
+        dc.fillRectangle(10, bottomY, bottomBoxWidth, bottomBoxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(8 + piecesBoxWidth / 2, 208, Graphics.FONT_XTINY, "Pieces", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(8 + piecesBoxWidth / 2, 220, Graphics.FONT_SMALL, model.pieces.size().toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        var leftBoxCenterX = 10 + bottomBoxWidth / 2;
+        dc.drawText(leftBoxCenterX, 220, Graphics.FONT_XTINY, "Pieces", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(leftBoxCenterX + 8, 232, Graphics.FONT_SMALL, model.pieces.size().toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Current piece
+        // Current piece box - right side at bottom with orange background
+        dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_ORANGE);
+        dc.fillRectangle(15 + bottomBoxWidth, bottomY, bottomBoxWidth, bottomBoxHeight);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        var rightBoxCenterX = 15 + bottomBoxWidth + bottomBoxWidth / 2;
         if (model.currentPiece != null && model.pieceActive) {
-            var pieceDuration = model.currentPiece.getCurrentDuration();
+            var pieceDuration = model.currentPiece.getCurrentDuration().toNumber();
             var pieceMinutes = pieceDuration / 60;
             var pieceSeconds = pieceDuration % 60;
-            dc.drawText(width - 75, 208, Graphics.FONT_XTINY, "Piece", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(width - 75, 220, Graphics.FONT_SMALL, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(rightBoxCenterX, 220, Graphics.FONT_XTINY, "Piece", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(rightBoxCenterX - 8, 232, Graphics.FONT_SMALL, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
         }
     }
 
