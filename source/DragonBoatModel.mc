@@ -12,6 +12,13 @@ class Piece {
     var endTime;
     var duration; // in seconds
 
+    // Historical data for graphs
+    var speedHistory;      // Array of speed samples
+    var strokeRateHistory; // Array of stroke rate samples
+    var sampleTimes;       // Array of sample timestamps
+    var lastSampleTime;    // Time of last sample
+    const SAMPLE_INTERVAL = 5000; // 5 seconds between samples
+
     function initialize() {
         strokeCount = 0;
         distance = 0.0;
@@ -19,6 +26,12 @@ class Piece {
         startTime = System.getTimer();
         endTime = null;
         duration = 0;
+
+        // Initialize history arrays
+        speedHistory = [];
+        strokeRateHistory = [];
+        sampleTimes = [];
+        lastSampleTime = startTime;
     }
 
     // Calculate duration when piece ends
@@ -33,6 +46,19 @@ class Piece {
             return duration;
         } else {
             return (System.getTimer() - startTime) / 1000.0;
+        }
+    }
+
+    // Record a sample for graphs
+    function recordSample(speed, strokeRate) {
+        var currentTime = System.getTimer();
+
+        // Only record if enough time has passed since last sample
+        if (currentTime - lastSampleTime >= SAMPLE_INTERVAL) {
+            speedHistory.add(speed);
+            strokeRateHistory.add(strokeRate);
+            sampleTimes.add((currentTime - startTime) / 1000.0); // Relative time in seconds
+            lastSampleTime = currentTime;
         }
     }
 }
@@ -120,6 +146,11 @@ class DragonBoatModel {
         // Update piece max speed
         if (currentPiece != null && pieceActive && currentSpeed > currentPiece.maxSpeed) {
             currentPiece.maxSpeed = currentSpeed;
+        }
+
+        // Record sample for graphs
+        if (currentPiece != null && pieceActive) {
+            currentPiece.recordSample(currentSpeed, strokeRate);
         }
 
         // Check if piece should end (30s since last stroke)

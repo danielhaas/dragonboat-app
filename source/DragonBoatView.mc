@@ -12,7 +12,7 @@ class DragonBoatView extends WatchUi.View {
     function initialize() {
         View.initialize();
         model = new DragonBoatModel();
-        viewMode = 3; // Start with optimized grid view
+        viewMode = 4; // Start with optimized grid view
 
         // Enable GPS
         Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
@@ -41,6 +41,8 @@ class DragonBoatView extends WatchUi.View {
         } else if (viewMode == 1) {
             drawCurrentPieceView(dc);
         } else if (viewMode == 2) {
+            drawGraphView(dc);
+        } else if (viewMode == 3) {
             drawAllMetricsView(dc);
         } else {
             drawOptimizedGridView(dc);
@@ -255,6 +257,90 @@ class DragonBoatView extends WatchUi.View {
         }
     }
 
+    // Draw graph view with speed and stroke rate history
+    function drawGraphView(dc) {
+        var width = dc.getWidth();
+        var height = dc.getHeight();
+        var centerX = width / 2;
+
+        // Title
+        dc.drawText(centerX, 5, Graphics.FONT_TINY, "PIECE GRAPHS", Graphics.TEXT_JUSTIFY_CENTER);
+
+        if (model.currentPiece != null && model.pieceActive && model.currentPiece.speedHistory.size() >= 2) {
+            // Graph dimensions
+            var graphMargin = 25;
+            var graphWidth = width - 2 * graphMargin;
+            var graphHeight = 80;
+            var speedGraphY = 30;
+            var strokeRateGraphY = 140;
+
+            // Convert speed from m/s to km/h
+            var speedKmh = [];
+            for (var i = 0; i < model.currentPiece.speedHistory.size(); i++) {
+                speedKmh.add(model.currentPiece.speedHistory[i] * 3.6);
+            }
+
+            // Draw Speed graph
+            drawBarGraph(dc, graphMargin, speedGraphY, graphWidth, graphHeight,
+                        speedKmh, "Speed (km/h)", Graphics.COLOR_BLUE);
+
+            // Draw Stroke Rate graph
+            drawBarGraph(dc, graphMargin, strokeRateGraphY, graphWidth, graphHeight,
+                        model.currentPiece.strokeRateHistory, "Stroke Rate (spm)", Graphics.COLOR_GREEN);
+        } else {
+            // Not enough data yet
+            dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM,
+                       "Collecting data...", Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    // Helper function to draw a bar graph
+    function drawBarGraph(dc, x, y, width, height, data, label, color) {
+        // Draw title
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(x + width / 2, y - 2, Graphics.FONT_XTINY, label, Graphics.TEXT_JUSTIFY_CENTER);
+
+        // Draw border
+        dc.drawRectangle(x, y + 15, width, height);
+
+        if (data.size() == 0) {
+            return;
+        }
+
+        // Find max value for scaling
+        var maxValue = 0.0;
+        for (var i = 0; i < data.size(); i++) {
+            if (data[i] > maxValue) {
+                maxValue = data[i];
+            }
+        }
+
+        // Ensure maxValue is not zero to avoid division by zero
+        if (maxValue < 0.1) {
+            maxValue = 1.0;
+        }
+
+        // Draw bars
+        var barWidth = width / data.size();
+        if (barWidth < 2) {
+            barWidth = 2;
+        }
+
+        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+        for (var i = 0; i < data.size(); i++) {
+            var barHeight = (data[i] / maxValue) * (height - 5);
+            var barX = x + (i * width / data.size());
+            var barY = y + 15 + height - barHeight;
+
+            dc.fillRectangle(barX, barY, barWidth - 1, barHeight);
+        }
+
+        // Draw max value label
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(x + width - 5, y + 15, Graphics.FONT_XTINY,
+                   maxValue.format("%.1f"), Graphics.TEXT_JUSTIFY_RIGHT);
+    }
+
     // Called when this View is removed from the screen
     function onHide() {
     }
@@ -273,9 +359,9 @@ class DragonBoatView extends WatchUi.View {
 
     // Switch view mode
     function switchView(direction) {
-        viewMode = (viewMode + direction) % 4;
+        viewMode = (viewMode + direction) % 5;
         if (viewMode < 0) {
-            viewMode = 3;
+            viewMode = 4;
         }
         WatchUi.requestUpdate();
     }
