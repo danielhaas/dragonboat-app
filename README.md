@@ -1,6 +1,8 @@
 # DragonBoat - Garmin Watch App for Dragon Boating
 
-A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, distance, and automatically detects training pieces.
+A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, distance, and automatically detects training pieces with real-time performance graphs.
+
+**Current Version:** v1.1.0
 
 ## Features
 
@@ -20,8 +22,9 @@ A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, 
 - Each piece records:
   - Time duration (from first to last stroke)
   - Stroke count
-  - Distance
+  - Distance (in meters)
   - Maximum speed
+  - **Historical data**: Speed and stroke rate sampled every 5 seconds for graphs
 
 ### Stroke Detection
 - Uses accelerometer to detect paddle strokes
@@ -29,15 +32,33 @@ A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, 
 - Real-time stroke rate calculation
 
 ### Multiple View Modes
-Switch between four display modes using UP/DOWN buttons:
-1. **Overall View**: Speed, stroke rate, and total distance
-2. **Current Piece View**: Stats for the current training piece
-3. **All Metrics View**: Comprehensive display of all data
-4. **Optimized Grid View** (Default): Kayaking-style layout with:
+Switch between five display modes using UP/DOWN buttons:
+
+1. **Overall View**: Session summary
+   - Current speed (km/h)
+   - Stroke rate (strokes per minute)
+   - Total distance
+
+2. **Current Piece View**: Grid layout for active piece
+   - Large time display at top
+   - Strokes count and distance (meters) in two columns
+   - Max speed at bottom
+
+3. **Performance Graphs** (NEW in v1.1.0): Visual piece analysis
+   - Speed over time graph (blue bars, km/h)
+   - Stroke rate over time graph (green bars, spm)
+   - Auto-scaling based on max values
+   - Shows data once piece has 10+ seconds (2+ samples)
+
+4. **All Metrics View**: Comprehensive display
+   - All session metrics in compact format
+   - Both overall and current piece data
+
+5. **Optimized Grid View** (Default): Kayaking-style layout
    - Color-coded boxes for SPM (green) and HR (blue)
-   - Current and average speed
-   - Time and distance
-   - Piece counter at bottom
+   - Current and average speed display
+   - Time and distance counters
+   - Purple pieces counter and orange current piece timer
 
 ### Activity Recording
 - Saves activities to Garmin Connect
@@ -56,13 +77,15 @@ Switch between four display modes using UP/DOWN buttons:
 1. Open the `dragonboat-app` folder in VS Code
 2. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
 3. Select "Monkey C: Build for Device"
-4. Choose "fenix6xpro" as the target device
+4. Choose "fenix6" as the target device
 
 #### Using Command Line:
 ```bash
 cd dragonboat-app
-monkeyc -d fenix6xpro -f monkey.jungle -o dragonboat.prg -y /path/to/developer_key
+monkeyc -d fenix6 -f monkey.jungle -o bin/dragonboat.prg -y ~/.Garmin/ConnectIQ/developer_key.der -w
 ```
+
+**Note:** On Linux, use Connect IQ SDK 7.3.1 or later. The SDK is typically installed in `~/.Garmin/ConnectIQ/Sdks/`.
 
 ### Installing on Your Watch
 
