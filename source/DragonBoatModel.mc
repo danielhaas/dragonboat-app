@@ -44,6 +44,7 @@ class DragonBoatModel {
     var currentSpeed;
     var strokeRate; // strokes per minute
     var elapsedTime;
+    var heartRate; // current heart rate in bpm
 
     // Current piece tracking
     var currentPiece;
@@ -74,6 +75,7 @@ class DragonBoatModel {
         currentSpeed = 0.0;
         strokeRate = 0.0;
         elapsedTime = 0;
+        heartRate = 0;
 
         pieces = [];
         currentPiece = null; // No piece until first stroke
@@ -129,6 +131,11 @@ class DragonBoatModel {
         if (sensorInfo has :accelerometerData && sensorInfo.accelerometerData != null) {
             var accelData = sensorInfo.accelerometerData;
             detectStroke(accelData);
+        }
+
+        // Update heart rate if available
+        if (sensorInfo has :heartRate && sensorInfo.heartRate != null) {
+            heartRate = sensorInfo.heartRate;
         }
     }
 

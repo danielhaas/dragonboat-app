@@ -6,7 +6,9 @@ A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, 
 
 ### Overall Session Tracking
 - Real-time speed (km/h)
+- Average speed
 - Stroke rate (strokes per minute)
+- Heart rate (BPM)
 - Total distance traveled
 - Total strokes
 - Elapsed time
@@ -27,10 +29,15 @@ A specialized Connect IQ app for dragon boating that tracks speed, stroke rate, 
 - Real-time stroke rate calculation
 
 ### Multiple View Modes
-Switch between three display modes:
+Switch between four display modes using UP/DOWN buttons:
 1. **Overall View**: Speed, stroke rate, and total distance
 2. **Current Piece View**: Stats for the current training piece
 3. **All Metrics View**: Comprehensive display of all data
+4. **Optimized Grid View** (Default): Kayaking-style layout with:
+   - Color-coded boxes for SPM (green) and HR (blue)
+   - Current and average speed
+   - Time and distance
+   - Piece counter at bottom
 
 ### Activity Recording
 - Saves activities to Garmin Connect
@@ -119,11 +126,11 @@ Edit `DragonBoatView.mc` to customize:
 - View modes
 
 ## Target Device
-- Garmin Fenix 6X Pro
+- Garmin Fenix 6 series (Fenix 6, 6S, 6X)
 
 ## Permissions Required
 - **Positioning**: GPS for speed and distance
-- **Sensor**: Accelerometer for stroke detection
+- **Sensor**: Accelerometer for stroke detection, heart rate monitoring
 - **FitContributor**: Save activities to Garmin Connect
 
 ## License
