@@ -17,9 +17,19 @@ class DragonBoatView extends WatchUi.View {
         // Enable GPS
         Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
 
-        // Enable accelerometer and heart rate
+        // Enable heart rate
         Sensor.setEnabledSensors([Sensor.SENSOR_HEARTRATE]);
         Sensor.enableSensorEvents(method(:onSensor));
+
+        // Enable accelerometer with high-frequency data listener
+        var accelOptions = {
+            :period => 1,
+            :accelerometer => {
+                :enabled => true,
+                :sampleRate => 25  // 25 Hz sample rate
+            }
+        };
+        Sensor.registerSensorDataListener(method(:onAccelData), accelOptions);
     }
 
     // Called when this View is brought to the foreground
@@ -351,10 +361,21 @@ class DragonBoatView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
-    // Sensor callback
+    // Sensor callback for heart rate
     function onSensor(sensorInfo as Sensor.Info) as Void {
-        model.updateAccelerometer(sensorInfo);
+        // Update heart rate if available
+        if (sensorInfo has :heartRate && sensorInfo.heartRate != null) {
+            model.heartRate = sensorInfo.heartRate;
+        }
         WatchUi.requestUpdate();
+    }
+
+    // Accelerometer data callback
+    function onAccelData(sensorData as Sensor.SensorData) as Void {
+        if (sensorData has :accelerometerData && sensorData.accelerometerData != null) {
+            model.updateAccelerometer(sensorData.accelerometerData);
+            WatchUi.requestUpdate();
+        }
     }
 
     // Switch view mode

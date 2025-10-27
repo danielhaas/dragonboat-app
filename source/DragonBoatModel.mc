@@ -158,34 +158,41 @@ class DragonBoatModel {
     }
 
     // Update with accelerometer data
-    function updateAccelerometer(sensorInfo) {
-        if (sensorInfo has :accelerometerData && sensorInfo.accelerometerData != null) {
-            var accelData = sensorInfo.accelerometerData;
-            detectStroke(accelData);
-        }
+    function updateAccelerometer(accelData) {
+        if (accelData != null) {
+            // AccelerometerData contains arrays of samples
+            // Process each sample to detect strokes
+            var xSamples = accelData.x;
+            var ySamples = accelData.y;
+            var zSamples = accelData.z;
 
-        // Update heart rate if available
-        if (sensorInfo has :heartRate && sensorInfo.heartRate != null) {
-            heartRate = sensorInfo.heartRate;
+            if (xSamples != null && ySamples != null && zSamples != null) {
+                var numSamples = xSamples.size();
+                for (var i = 0; i < numSamples; i++) {
+                    detectStroke(xSamples[i], ySamples[i], zSamples[i]);
+                }
+            }
         }
     }
 
-    // Detect strokes from accelerometer data
-    function detectStroke(accelData) {
+    // Detect strokes from accelerometer data (single sample)
+    function detectStroke(x, y, z) {
         var currentTime = System.getTimer();
 
         // Cooldown check - don't detect strokes too frequently
         if (currentTime - lastStrokeTime < STROKE_COOLDOWN) {
-            lastAccelData = accelData;
+            lastAccelData = [x, y, z];
             return;
         }
 
         if (lastAccelData != null) {
             // Calculate magnitude of acceleration change
-            var dx = accelData.x - lastAccelData.x;
-            var dy = accelData.y - lastAccelData.y;
-            var dz = accelData.z - lastAccelData.z;
-            var magnitude = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            var dx = x - lastAccelData[0];
+            var dy = y - lastAccelData[1];
+            var dz = z - lastAccelData[2];
+
+            // Convert from milli-g to g (1000 milli-g = 1g)
+            var magnitude = Math.sqrt(dx*dx + dy*dy + dz*dz) / 1000.0;
 
             // If magnitude exceeds threshold, count as a stroke
             if (magnitude > ACCEL_THRESHOLD) {
@@ -194,7 +201,7 @@ class DragonBoatModel {
             }
         }
 
-        lastAccelData = accelData;
+        lastAccelData = [x, y, z];
     }
 
     // Register a stroke
