@@ -1,3 +1,9 @@
 <strings>
     <string id="AppName">DragonBoat</string>
+    <string id="strokeTimestamps">Stroke Timestamps</string>
+    <string id="strokeRateSamples">Stroke Rate Samples</string>
+    <string id="speedSamples">Speed Samples</string>
+    <string id="pieceStrokeCount">Piece Stroke Count</string>
+    <string id="pieceAvgSpeed">Piece Average Speed</string>
+    <string id="pieceMaxSpeed">Piece Maximum Speed</string>
 </strings>

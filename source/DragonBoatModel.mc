@@ -11,6 +11,8 @@ class Piece {
     var startTime;
     var endTime;
     var duration; // in seconds
+    var startTimeMs; // Raw milliseconds for display precision
+    var endTimeMs; // Raw milliseconds for display precision
 
     // Historical data for graphs
     var speedHistory;      // Array of speed samples
@@ -24,7 +26,9 @@ class Piece {
         distance = 0.0;
         maxSpeed = 0.0;
         startTime = System.getTimer();
+        startTimeMs = startTime; // Store raw ms
         endTime = null;
+        endTimeMs = null;
         duration = 0;
 
         // Initialize history arrays
@@ -37,6 +41,7 @@ class Piece {
     // Calculate duration when piece ends
     function finalize(lastStrokeTime) {
         endTime = lastStrokeTime;
+        endTimeMs = lastStrokeTime; // Store raw ms
         duration = (endTime - startTime) / 1000.0; // convert to seconds
     }
 
@@ -46,6 +51,15 @@ class Piece {
             return duration;
         } else {
             return (System.getTimer() - startTime) / 1000.0;
+        }
+    }
+    
+    // Get duration in milliseconds for display
+    function getDurationMs() {
+        if (endTimeMs != null) {
+            return endTimeMs - startTimeMs;
+        } else {
+            return System.getTimer() - startTimeMs;
         }
     }
 
@@ -79,7 +93,7 @@ class DragonBoatModel {
 
     // Piece detection - based on strokes
     var lastPieceStrokeTime; // Time of last stroke in current piece
-    const PIECE_END_DURATION = 10000; // 10 seconds in milliseconds
+    const PIECE_END_DURATION = 5000; // 5 seconds in milliseconds
 
     // Stroke detection
     var lastAccelData;
@@ -94,6 +108,7 @@ class DragonBoatModel {
 
     // Last position for distance calculation
     var lastPosition;
+
 
     function initialize() {
         totalDistance = 0.0;

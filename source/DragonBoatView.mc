@@ -97,17 +97,35 @@ class DragonBoatView extends WatchUi.View {
         var threeQuarterX = (width * 3) / 4;
 
         // Title
-        dc.drawText(centerX, 8, Graphics.FONT_TINY, "CURRENT PIECE", Graphics.TEXT_JUSTIFY_CENTER);
+        var isCompleted = !model.pieceActive && model.getDisplayPiece() != null;
+        dc.drawText(centerX, 8, Graphics.FONT_TINY, isCompleted ? "COMPLETED PIECE" : "CURRENT PIECE", Graphics.TEXT_JUSTIFY_CENTER);
 
         var displayPiece = model.getDisplayPiece();
         if (displayPiece != null) {
-            var pieceDuration = displayPiece.getCurrentDuration().toNumber();
-            var minutes = pieceDuration / 60;
-            var seconds = pieceDuration % 60;
+            var minutes, seconds, milliseconds;
+            
+            // For completed pieces, use actual millisecond precision
+            if (isCompleted) {
+                var durationMs = displayPiece.getDurationMs();
+                minutes = (durationMs / 60000).toNumber(); // Convert ms to minutes
+                seconds = ((durationMs % 60000) / 1000).toNumber(); // Get remaining seconds  
+                milliseconds = ((durationMs % 1000) / 10).toNumber(); // Get centiseconds (hundredths)
+            } else {
+                var pieceDuration = displayPiece.getCurrentDuration();
+                minutes = pieceDuration.toNumber() / 60;
+                seconds = pieceDuration.toNumber() % 60;
+                milliseconds = ((pieceDuration - pieceDuration.toNumber()) * 100).toNumber();
+            }
 
             // Large Time Display at top
             dc.drawText(centerX, 30, Graphics.FONT_SMALL, "Time", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(centerX, 45, Graphics.FONT_NUMBER_HOT, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+            if (isCompleted) {
+                dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(centerX, 45, Graphics.FONT_NUMBER_HOT, minutes.format("%d") + ":" + seconds.format("%02d") + "." + milliseconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            } else {
+                dc.drawText(centerX, 45, Graphics.FONT_NUMBER_HOT, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+            }
 
             // Middle row: Strokes (left) and Distance (right)
             dc.drawText(quarterX, 125, Graphics.FONT_XTINY, "Strokes", Graphics.TEXT_JUSTIFY_CENTER);
@@ -119,13 +137,6 @@ class DragonBoatView extends WatchUi.View {
             // Bottom: Max Speed
             dc.drawText(centerX, 195, Graphics.FONT_SMALL, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
             var maxSpeedKmh = displayPiece.maxSpeed * 3.6;
-            
-            // Show if piece is completed
-            if (!model.pieceActive && displayPiece != null) {
-                dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
-                dc.drawText(centerX, 245, Graphics.FONT_TINY, "COMPLETED", Graphics.TEXT_JUSTIFY_CENTER);
-                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-            }
             dc.drawText(centerX, 220, Graphics.FONT_MEDIUM, maxSpeedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
         } else {
             // No active piece
@@ -210,13 +221,12 @@ class DragonBoatView extends WatchUi.View {
         var boxY = 8;
         var boxHeight = 75;
 
-        // Stroke Rate box (green background) - covers SPM and km/h - moved even more right
+        // Stroke Rate box (green background) - covers SPM only - moved even more right
         dc.setColor(Graphics.COLOR_DK_GREEN, Graphics.COLOR_DK_GREEN);
         dc.fillRectangle(25, boxY, boxWidth, boxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "SPM", Graphics.TEXT_JUSTIFY_CENTER);
         dc.drawText(25 + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, model.strokeRate.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(25 + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "km/h", Graphics.TEXT_JUSTIFY_CENTER);
 
         // Heart Rate box (blue background) - covers HR and Avg - moved even more left
         dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_BLUE);
