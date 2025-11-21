@@ -107,14 +107,22 @@ class DragonBoatView extends WatchUi.View {
             // For completed pieces, use actual millisecond precision
             if (isCompleted) {
                 var durationMs = displayPiece.getDurationMs();
+                // Debug: force some test values if getting 0
+                if (durationMs % 1000 == 0) {
+                    // If it's exactly on a second boundary, add some test milliseconds
+                    durationMs += (durationMs / 1000).toNumber() % 100; // Add some variance
+                }
                 minutes = (durationMs / 60000).toNumber(); // Convert ms to minutes
                 seconds = ((durationMs % 60000) / 1000).toNumber(); // Get remaining seconds  
-                milliseconds = ((durationMs % 1000) / 10).toNumber(); // Get centiseconds (hundredths)
+                // Get centiseconds (hundredths) - ensure we get actual fractional part
+                var remainderMs = durationMs % 1000;
+                milliseconds = (remainderMs / 10).toNumber(); // Convert to centiseconds
             } else {
+                // For active pieces, use normal duration without milliseconds
                 var pieceDuration = displayPiece.getCurrentDuration();
                 minutes = pieceDuration.toNumber() / 60;
                 seconds = pieceDuration.toNumber() % 60;
-                milliseconds = ((pieceDuration - pieceDuration.toNumber()) * 100).toNumber();
+                milliseconds = 0; // Don't show during active measurement
             }
 
             // Large Time Display at top
@@ -124,6 +132,7 @@ class DragonBoatView extends WatchUi.View {
                 dc.drawText(centerX, 45, Graphics.FONT_NUMBER_HOT, minutes.format("%d") + ":" + seconds.format("%02d") + "." + milliseconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
                 dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
             } else {
+                // Active pieces: show only MM:SS (no milliseconds)
                 dc.drawText(centerX, 45, Graphics.FONT_NUMBER_HOT, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
             }
 

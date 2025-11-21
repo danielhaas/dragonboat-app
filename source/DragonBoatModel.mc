@@ -281,8 +281,9 @@ class DragonBoatModel {
     // End current piece
     function endPiece() {
         if (currentPiece != null && currentPiece.strokeCount > 0) {
-            // Finalize the piece with the last stroke time
-            currentPiece.finalize(lastPieceStrokeTime);
+            // Finalize the piece with current time to capture millisecond precision
+            var currentTime = System.getTimer();
+            currentPiece.finalize(currentTime);
             pieces.add(currentPiece);
         }
         currentPiece = null;
