@@ -99,8 +99,9 @@ class DragonBoatView extends WatchUi.View {
         // Title
         dc.drawText(centerX, 8, Graphics.FONT_TINY, "CURRENT PIECE", Graphics.TEXT_JUSTIFY_CENTER);
 
-        if (model.currentPiece != null && model.pieceActive) {
-            var pieceDuration = model.currentPiece.getCurrentDuration().toNumber();
+        var displayPiece = model.getDisplayPiece();
+        if (displayPiece != null) {
+            var pieceDuration = displayPiece.getCurrentDuration().toNumber();
             var minutes = pieceDuration / 60;
             var seconds = pieceDuration % 60;
 
@@ -110,14 +111,21 @@ class DragonBoatView extends WatchUi.View {
 
             // Middle row: Strokes (left) and Distance (right)
             dc.drawText(quarterX, 125, Graphics.FONT_XTINY, "Strokes", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(quarterX, 135, Graphics.FONT_NUMBER_MEDIUM, model.currentPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
             dc.drawText(threeQuarterX, 125, Graphics.FONT_XTINY, "m", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, model.currentPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
 
             // Bottom: Max Speed
             dc.drawText(centerX, 195, Graphics.FONT_SMALL, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
-            var maxSpeedKmh = model.currentPiece.maxSpeed * 3.6;
+            var maxSpeedKmh = displayPiece.maxSpeed * 3.6;
+            
+            // Show if piece is completed
+            if (!model.pieceActive && displayPiece != null) {
+                dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(centerX, 245, Graphics.FONT_TINY, "COMPLETED", Graphics.TEXT_JUSTIFY_CENTER);
+                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            }
             dc.drawText(centerX, 220, Graphics.FONT_MEDIUM, maxSpeedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
         } else {
             // No active piece
@@ -165,24 +173,25 @@ class DragonBoatView extends WatchUi.View {
         dc.drawText(centerX, y, Graphics.FONT_XTINY, "-- Piece --", Graphics.TEXT_JUSTIFY_CENTER);
         y += lineHeight;
 
-        if (model.currentPiece != null && model.pieceActive) {
+        var displayPiece = model.getDisplayPiece();
+        if (displayPiece != null) {
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Time:", Graphics.TEXT_JUSTIFY_LEFT);
-            var pieceDuration = model.currentPiece.getCurrentDuration().toNumber();
+            var pieceDuration = displayPiece.getCurrentDuration().toNumber();
             var pieceMinutes = pieceDuration / 60;
             var pieceSeconds = pieceDuration % 60;
             dc.drawText(width - margin, y, Graphics.FONT_XTINY, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_RIGHT);
             y += lineHeight;
 
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Strokes:", Graphics.TEXT_JUSTIFY_LEFT);
-            dc.drawText(width - margin, y, Graphics.FONT_XTINY, model.currentPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_RIGHT);
+            dc.drawText(width - margin, y, Graphics.FONT_XTINY, displayPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_RIGHT);
             y += lineHeight;
 
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Dist:", Graphics.TEXT_JUSTIFY_LEFT);
-            dc.drawText(width - margin, y, Graphics.FONT_XTINY, (model.currentPiece.distance / 1000.0).format("%.2f"), Graphics.TEXT_JUSTIFY_RIGHT);
+            dc.drawText(width - margin, y, Graphics.FONT_XTINY, (displayPiece.distance / 1000.0).format("%.2f"), Graphics.TEXT_JUSTIFY_RIGHT);
             y += lineHeight;
 
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Max:", Graphics.TEXT_JUSTIFY_LEFT);
-            var maxSpeedKmh = model.currentPiece.maxSpeed * 3.6;
+            var maxSpeedKmh = displayPiece.maxSpeed * 3.6;
             dc.drawText(width - margin, y, Graphics.FONT_XTINY, maxSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_RIGHT);
         } else {
             dc.drawText(centerX, y, Graphics.FONT_XTINY, "No active", Graphics.TEXT_JUSTIFY_CENTER);
@@ -258,8 +267,9 @@ class DragonBoatView extends WatchUi.View {
         dc.fillRectangle(15 + bottomBoxWidth, bottomY, bottomBoxWidth, bottomBoxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         var rightBoxCenterX = 15 + bottomBoxWidth + bottomBoxWidth / 2;
-        if (model.currentPiece != null && model.pieceActive) {
-            var pieceDuration = model.currentPiece.getCurrentDuration().toNumber();
+        var displayPiece = model.getDisplayPiece();
+        if (displayPiece != null) {
+            var pieceDuration = displayPiece.getCurrentDuration().toNumber();
             var pieceMinutes = pieceDuration / 60;
             var pieceSeconds = pieceDuration % 60;
             dc.drawText(rightBoxCenterX, 220, Graphics.FONT_XTINY, "Piece", Graphics.TEXT_JUSTIFY_CENTER);
@@ -276,7 +286,8 @@ class DragonBoatView extends WatchUi.View {
         // Title
         dc.drawText(centerX, 5, Graphics.FONT_TINY, "PIECE GRAPHS", Graphics.TEXT_JUSTIFY_CENTER);
 
-        if (model.currentPiece != null && model.pieceActive && model.currentPiece.speedHistory.size() >= 2) {
+        var displayPiece = model.getDisplayPiece();
+        if (displayPiece != null && displayPiece.speedHistory.size() >= 2) {
             // Graph dimensions
             var graphMargin = 25;
             var graphWidth = width - 2 * graphMargin;
@@ -286,8 +297,8 @@ class DragonBoatView extends WatchUi.View {
 
             // Convert speed from m/s to km/h
             var speedKmh = [];
-            for (var i = 0; i < model.currentPiece.speedHistory.size(); i++) {
-                speedKmh.add(model.currentPiece.speedHistory[i] * 3.6);
+            for (var i = 0; i < displayPiece.speedHistory.size(); i++) {
+                speedKmh.add(displayPiece.speedHistory[i] * 3.6);
             }
 
             // Draw Speed graph
@@ -296,7 +307,7 @@ class DragonBoatView extends WatchUi.View {
 
             // Draw Stroke Rate graph
             drawBarGraph(dc, graphMargin, strokeRateGraphY, graphWidth, graphHeight,
-                        model.currentPiece.strokeRateHistory, "Stroke Rate (spm)", Graphics.COLOR_GREEN);
+                        displayPiece.strokeRateHistory, "Stroke Rate (spm)", Graphics.COLOR_GREEN);
         } else {
             // Not enough data yet
             dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM,

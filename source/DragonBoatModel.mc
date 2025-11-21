@@ -274,6 +274,16 @@ class DragonBoatModel {
         pieceActive = false;
         lastPieceStrokeTime = 0;
     }
+    
+    // Get the piece to display (current active piece or last completed piece)
+    function getDisplayPiece() {
+        if (currentPiece != null) {
+            return currentPiece;
+        } else if (pieces.size() > 0) {
+            return pieces[pieces.size() - 1];
+        }
+        return null;
+    }
 
     // Calculate distance between two positions using Haversine formula
     function calculateDistance(pos1, pos2) {
@@ -297,6 +307,9 @@ class DragonBoatModel {
     // Update elapsed time
     function updateElapsedTime() {
         elapsedTime = (System.getTimer() - sessionStartTime) / 1000; // seconds
+        
+        // Also check if piece should end (since this is called frequently)
+        checkPieceEnd();
     }
 
     // Stop the session
