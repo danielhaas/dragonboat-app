@@ -86,6 +86,17 @@ class DragonBoatView extends WatchUi.View {
         dc.drawText(centerX, y, Graphics.FONT_SMALL, "Distance", Graphics.TEXT_JUSTIFY_CENTER);
         y += 30;
         dc.drawText(centerX, y, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f") + " km", Graphics.TEXT_JUSTIFY_CENTER);
+        
+        // Piece detection status indicator
+        y = height - 30;
+        if (model.isPieceDetectionEnabled()) {
+            dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(centerX, y, Graphics.FONT_TINY, "PIECES: ON", Graphics.TEXT_JUSTIFY_CENTER);
+        } else {
+            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(centerX, y, Graphics.FONT_TINY, "PIECES: OFF", Graphics.TEXT_JUSTIFY_CENTER);
+        }
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
     // Draw current piece view
@@ -151,6 +162,17 @@ class DragonBoatView extends WatchUi.View {
             // No active piece
             dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM, "Start paddling...", Graphics.TEXT_JUSTIFY_CENTER);
         }
+        
+        // Piece detection status indicator at bottom
+        var bottomY = height - 20;
+        if (model.isPieceDetectionEnabled()) {
+            dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(centerX, bottomY, Graphics.FONT_XTINY, "PIECES: ON", Graphics.TEXT_JUSTIFY_CENTER);
+        } else {
+            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(centerX, bottomY, Graphics.FONT_XTINY, "PIECES: OFF", Graphics.TEXT_JUSTIFY_CENTER);
+        }
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
     // Draw all metrics view
@@ -360,16 +382,34 @@ class DragonBoatView extends WatchUi.View {
             maxValue = 1.0;
         }
 
-        // Draw bars
-        var barWidth = width / data.size();
-        if (barWidth < 2) {
-            barWidth = 2;
+        // Draw bars with fixed 60 bar resolution
+        var NUM_BARS = 60;
+        var barWidth = width / NUM_BARS;
+        if (barWidth < 1) {
+            barWidth = 1;
         }
 
         dc.setColor(color, Graphics.COLOR_TRANSPARENT);
-        for (var i = 0; i < data.size(); i++) {
-            var barHeight = (data[i] / maxValue) * (height - 5);
-            var barX = x + (i * width / data.size());
+        
+        // Interpolate data to NUM_BARS bars
+        for (var barIndex = 0; barIndex < NUM_BARS; barIndex++) {
+            // Map bar index to data index
+            var dataIndex = (barIndex * data.size()) / NUM_BARS;
+            var value;
+            
+            if (dataIndex >= data.size() - 1) {
+                // Use last value
+                value = data[data.size() - 1];
+            } else {
+                // Linear interpolation between two data points
+                var lowerIndex = dataIndex.toNumber();
+                var upperIndex = lowerIndex + 1;
+                var fraction = dataIndex - lowerIndex;
+                value = data[lowerIndex] * (1 - fraction) + data[upperIndex] * fraction;
+            }
+            
+            var barHeight = (value / maxValue) * (height - 5);
+            var barX = x + (barIndex * barWidth);
             var barY = y + 15 + height - barHeight;
 
             dc.fillRectangle(barX, barY, barWidth - 1, barHeight);

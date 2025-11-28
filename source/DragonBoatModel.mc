@@ -19,7 +19,7 @@ class Piece {
     var strokeRateHistory; // Array of stroke rate samples
     var sampleTimes;       // Array of sample timestamps
     var lastSampleTime;    // Time of last sample
-    const SAMPLE_INTERVAL = 5000; // 5 seconds between samples
+    const SAMPLE_INTERVAL = 1000; // 1 second between samples
 
     function initialize() {
         strokeCount = 0;
@@ -90,6 +90,7 @@ class DragonBoatModel {
     var currentPiece;
     var pieces;
     var pieceActive; // Is there an active piece
+    var pieceDetectionEnabled; // Toggle for piece detection
 
     // Piece detection - based on strokes
     var lastPieceStrokeTime; // Time of last stroke in current piece
@@ -121,6 +122,7 @@ class DragonBoatModel {
         pieces = [];
         currentPiece = null; // No piece until first stroke
         pieceActive = false;
+        pieceDetectionEnabled = true; // Default to enabled
 
         lastPieceStrokeTime = 0;
 
@@ -225,15 +227,18 @@ class DragonBoatModel {
 
         totalStrokes++;
 
-        // Start new piece if no active piece
-        if (!pieceActive || currentPiece == null) {
-            currentPiece = new Piece();
-            pieceActive = true;
-        }
+        // Only handle piece tracking if enabled
+        if (pieceDetectionEnabled) {
+            // Start new piece if no active piece
+            if (!pieceActive || currentPiece == null) {
+                currentPiece = new Piece();
+                pieceActive = true;
+            }
 
-        // Add stroke to current piece
-        currentPiece.strokeCount++;
-        lastPieceStrokeTime = currentTime;
+            // Add stroke to current piece
+            currentPiece.strokeCount++;
+            lastPieceStrokeTime = currentTime;
+        }
 
         // Update stroke rate (strokes per minute)
         updateStrokeRate();
@@ -265,7 +270,7 @@ class DragonBoatModel {
 
     // Check if piece should end (10 seconds since last stroke)
     function checkPieceEnd() {
-        if (!pieceActive || currentPiece == null) {
+        if (!pieceActive || currentPiece == null || !pieceDetectionEnabled) {
             return;
         }
 
@@ -280,15 +285,38 @@ class DragonBoatModel {
 
     // End current piece
     function endPiece() {
-        if (currentPiece != null && currentPiece.strokeCount > 0) {
-            // Finalize the piece with current time to capture millisecond precision
-            var currentTime = System.getTimer();
-            currentPiece.finalize(currentTime);
+        if (currentPiece != null && currentPiece.strokeCount >= 3) {
+            // Only save pieces with 3 or more strokes
+            // Finalize the piece at the last stroke time (not current time)
+            // This excludes the rest period from the piece duration
+            currentPiece.finalize(lastPieceStrokeTime);
             pieces.add(currentPiece);
+            
+            // Add lap to FIT file for this piece
+            if (session != null && session.isRecording()) {
+                session.addLap();
+            }
         }
         currentPiece = null;
         pieceActive = false;
         lastPieceStrokeTime = 0;
+    }
+    
+    // Toggle piece detection on/off
+    function togglePieceDetection() {
+        pieceDetectionEnabled = !pieceDetectionEnabled;
+        
+        // If turning off and there's an active piece, end it
+        if (!pieceDetectionEnabled && pieceActive) {
+            endPiece();
+        }
+        
+        return pieceDetectionEnabled;
+    }
+    
+    // Get piece detection status
+    function isPieceDetectionEnabled() {
+        return pieceDetectionEnabled;
     }
     
     // Get the piece to display (current active piece or last completed piece)

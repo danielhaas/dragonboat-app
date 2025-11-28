@@ -35,9 +35,11 @@ class DragonBoatDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    // Handle select button
+    // Handle select button - toggle piece detection
     function onSelect() {
-        // Could be used for lap marking or other features
+        var model = view.getModel();
+        model.togglePieceDetection();
+        WatchUi.requestUpdate(); // Update display to show new status
         return true;
     }
 }
