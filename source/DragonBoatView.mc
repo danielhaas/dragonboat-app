@@ -4,6 +4,7 @@ using Toybox.System;
 using Toybox.Position;
 using Toybox.Sensor;
 using Toybox.Lang;
+using Toybox.UserProfile;
 
 class DragonBoatView extends WatchUi.View {
     var model;
@@ -59,6 +60,24 @@ class DragonBoatView extends WatchUi.View {
         }
     }
 
+    // Get color for heart rate based on user-configured HR zones
+    function getHeartRateColor(hr) {
+        var zones = UserProfile.getHeartRateZones(UserProfile.HR_ZONE_SPORT_GENERIC);
+        if (zones != null && zones.size() >= 6) {
+            if (hr < zones[1]) { return Graphics.COLOR_LT_GRAY; }
+            if (hr < zones[2]) { return Graphics.COLOR_BLUE; }
+            if (hr < zones[3]) { return Graphics.COLOR_GREEN; }
+            if (hr < zones[4]) { return Graphics.COLOR_YELLOW; }
+            if (hr < zones[5]) { return Graphics.COLOR_ORANGE; }
+            return Graphics.COLOR_RED;
+        }
+        if (hr < 100) { return Graphics.COLOR_LT_GRAY; }
+        if (hr < 130) { return Graphics.COLOR_BLUE; }
+        if (hr < 150) { return Graphics.COLOR_GREEN; }
+        if (hr < 170) { return Graphics.COLOR_ORANGE; }
+        return Graphics.COLOR_RED;
+    }
+
     // Draw overall session view
     function drawOverallView(dc) {
         var width = dc.getWidth();
@@ -70,39 +89,49 @@ class DragonBoatView extends WatchUi.View {
         dc.drawText(centerX, 8, Graphics.FONT_TINY, "OVERALL", Graphics.TEXT_JUSTIFY_CENTER);
 
         // Speed
-        dc.drawText(centerX, y, Graphics.FONT_SMALL, "Speed", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 30;
-        var speedKmh = model.currentSpeed * 3.6; // m/s to km/h
-        dc.drawText(centerX, y, Graphics.FONT_MEDIUM, speedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 35;
+        dc.drawText(centerX, y, Graphics.FONT_XTINY, "Speed", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 16;
+        var speedKmh = model.currentSpeed * 3.6;
+        dc.drawText(centerX, y, Graphics.FONT_SMALL, speedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 28;
+
+        // Avg Speed
+        dc.drawText(centerX, y, Graphics.FONT_XTINY, "Avg Speed", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 16;
+        var avgSpeed = 0.0;
+        if (model.elapsedTime > 0) {
+            avgSpeed = (model.totalDistance / model.elapsedTime) * 3.6;
+        }
+        dc.drawText(centerX, y, Graphics.FONT_SMALL, avgSpeed.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 28;
 
         // Stroke rate
-        dc.drawText(centerX, y, Graphics.FONT_SMALL, "Stroke Rate", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 35;
-        dc.drawText(centerX, y, Graphics.FONT_MEDIUM, model.strokeRate.format("%.0f") + " spm", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 40;
+        dc.drawText(centerX, y, Graphics.FONT_XTINY, "Stroke Rate", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 16;
+        dc.drawText(centerX, y, Graphics.FONT_SMALL, model.strokeRate.format("%.0f") + " spm", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 28;
 
         // Distance
-        dc.drawText(centerX, y, Graphics.FONT_SMALL, "Distance", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 30;
-        dc.drawText(centerX, y, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f") + " km", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 35;
+        dc.drawText(centerX, y, Graphics.FONT_XTINY, "Distance", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 16;
+        dc.drawText(centerX, y, Graphics.FONT_SMALL, (model.totalDistance / 1000.0).format("%.2f") + " km", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 28;
 
-        // Heart Rate
-        dc.drawText(centerX, y, Graphics.FONT_SMALL, "Heart Rate", Graphics.TEXT_JUSTIFY_CENTER);
-        y += 30;
+        // Heart Rate (color-coded)
+        dc.drawText(centerX, y, Graphics.FONT_XTINY, "Heart Rate", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 16;
         var hrText = model.heartRate > 0 ? model.heartRate.toString() + " bpm" : "-- bpm";
-        dc.drawText(centerX, y, Graphics.FONT_MEDIUM, hrText, Graphics.TEXT_JUSTIFY_CENTER);
-
-        // Piece detection status indicator
-        y = height - 30;
-        if (model.isPieceDetectionEnabled()) {
-            dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(centerX, y, Graphics.FONT_TINY, "PIECES: ON", Graphics.TEXT_JUSTIFY_CENTER);
-        } else {
-            dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(centerX, y, Graphics.FONT_TINY, "PIECES: OFF", Graphics.TEXT_JUSTIFY_CENTER);
+        if (model.heartRate > 0) {
+            dc.setColor(getHeartRateColor(model.heartRate), Graphics.COLOR_TRANSPARENT);
         }
+        dc.drawText(centerX, y, Graphics.FONT_SMALL, hrText, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+
+        // Time of day at bottom
+        var clockTime = System.getClockTime();
+        var timeStr = clockTime.hour.format("%02d") + ":" + clockTime.min.format("%02d");
+        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(centerX, height - 30, Graphics.FONT_TINY, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
@@ -168,13 +197,25 @@ class DragonBoatView extends WatchUi.View {
 
             var curHrText = model.heartRate > 0 ? model.heartRate.toString() : "--";
             dc.drawText(threeQuarterX, 190, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
+            if (model.heartRate > 0) {
+                dc.setColor(getHeartRateColor(model.heartRate), Graphics.COLOR_TRANSPARENT);
+            }
             dc.drawText(threeQuarterX, 203, Graphics.FONT_SMALL, curHrText, Graphics.TEXT_JUSTIFY_CENTER);
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
 
             dc.drawText(quarterX, 225, Graphics.FONT_XTINY, "Max HR", Graphics.TEXT_JUSTIFY_CENTER);
+            if (displayPiece.maxHeartRate > 0) {
+                dc.setColor(getHeartRateColor(displayPiece.maxHeartRate), Graphics.COLOR_TRANSPARENT);
+            }
             dc.drawText(quarterX, 238, Graphics.FONT_SMALL, displayPiece.maxHeartRate > 0 ? displayPiece.maxHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
 
             dc.drawText(threeQuarterX, 225, Graphics.FONT_XTINY, "Avg HR", Graphics.TEXT_JUSTIFY_CENTER);
+            if (displayPiece.avgHeartRate > 0) {
+                dc.setColor(getHeartRateColor(displayPiece.avgHeartRate), Graphics.COLOR_TRANSPARENT);
+            }
             dc.drawText(threeQuarterX, 238, Graphics.FONT_SMALL, displayPiece.avgHeartRate > 0 ? displayPiece.avgHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         } else {
             // No active piece
             dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM, "Start paddling...", Graphics.TEXT_JUSTIFY_CENTER);
@@ -282,7 +323,11 @@ class DragonBoatView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
         var hrDisplay = model.heartRate > 0 ? model.heartRate.toString() : "--";
+        if (model.heartRate > 0) {
+            dc.setColor(getHeartRateColor(model.heartRate), Graphics.COLOR_TRANSPARENT);
+        }
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, hrDisplay, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
 
         // Row 2: Speed labels and values (below boxes) - values moved even higher
@@ -333,6 +378,13 @@ class DragonBoatView extends WatchUi.View {
             dc.drawText(rightBoxCenterX, 220, Graphics.FONT_XTINY, "Piece", Graphics.TEXT_JUSTIFY_CENTER);
             dc.drawText(rightBoxCenterX - 8, 232, Graphics.FONT_SMALL, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
         }
+
+        // Time of day at bottom center
+        var clockTime = System.getClockTime();
+        var timeStr = clockTime.hour.format("%02d") + ":" + clockTime.min.format("%02d");
+        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(width / 2, 205, Graphics.FONT_XTINY, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
     // Draw graph view with speed and stroke rate history
