@@ -2,6 +2,7 @@ using Toybox.System;
 using Toybox.Position;
 using Toybox.Sensor;
 using Toybox.ActivityRecording;
+using Toybox.Activity;
 
 // Class to track a single piece
 class Piece {
@@ -144,7 +145,12 @@ class DragonBoatModel {
 
     // Update with new position data
     function updatePosition(info) {
-        if (info has :speed && info.speed != null) {
+        // Get speed - prefer Activity.getActivityInfo() (firmware sensor fusion)
+        // over Position.Info.speed (raw GPS, often null on some devices)
+        var activityInfo = Activity.getActivityInfo();
+        if (activityInfo != null && activityInfo.currentSpeed != null) {
+            currentSpeed = activityInfo.currentSpeed;
+        } else if (info has :speed && info.speed != null) {
             currentSpeed = info.speed;
         }
 
@@ -351,8 +357,13 @@ class DragonBoatModel {
     // Update elapsed time
     function updateElapsedTime() {
         elapsedTime = (System.getTimer() - sessionStartTime) / 1000; // seconds
-        
-        // Also check if piece should end (since this is called frequently)
+
+        // Poll speed from activity info for more responsive updates
+        var activityInfo = Activity.getActivityInfo();
+        if (activityInfo != null && activityInfo.currentSpeed != null) {
+            currentSpeed = activityInfo.currentSpeed;
+        }
+
         checkPieceEnd();
     }
 
