@@ -137,7 +137,7 @@ class DragonBoatModel {
         // Start activity recording session
         session = ActivityRecording.createSession({
             :name => "Dragon Boat",
-            :sport => ActivityRecording.SPORT_ROWING,
+            :sport => ActivityRecording.SPORT_GENERIC,
             :subSport => ActivityRecording.SUB_SPORT_GENERIC
         });
         session.start();
