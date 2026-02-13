@@ -22,6 +22,12 @@ class Piece {
     var lastSampleTime;    // Time of last sample
     const SAMPLE_INTERVAL = 1000; // 1 second between samples
 
+    // Heart rate tracking
+    var maxHeartRate;       // Highest HR seen during piece
+    var avgHeartRate;       // Running average HR
+    var heartRateSum;       // Sum for computing average
+    var heartRateSamples;   // Count for computing average
+
     // Start/Chug phase detection
     var startPhaseEndIndex; // Sample index where start phase ends (null until detected)
     var peakStrokeRate;     // Highest stroke rate seen so far during piece
@@ -42,6 +48,12 @@ class Piece {
         strokeRateHistory = [];
         sampleTimes = [];
         lastSampleTime = startTime;
+
+        // Heart rate tracking
+        maxHeartRate = 0;
+        avgHeartRate = 0;
+        heartRateSum = 0;
+        heartRateSamples = 0;
 
         // Phase detection
         startPhaseEndIndex = null;
@@ -74,7 +86,7 @@ class Piece {
     }
 
     // Record a sample for graphs
-    function recordSample(speed, strokeRate) {
+    function recordSample(speed, strokeRate, heartRate) {
         var currentTime = System.getTimer();
 
         // Only record if enough time has passed since last sample
@@ -83,6 +95,16 @@ class Piece {
             strokeRateHistory.add(strokeRate);
             sampleTimes.add((currentTime - startTime) / 1000.0); // Relative time in seconds
             lastSampleTime = currentTime;
+
+            // Heart rate tracking
+            if (heartRate > maxHeartRate) {
+                maxHeartRate = heartRate;
+            }
+            if (heartRate > 0) {
+                heartRateSum += heartRate;
+                heartRateSamples++;
+                avgHeartRate = heartRateSum / heartRateSamples;
+            }
 
             // Phase detection: track peak stroke rate
             if (strokeRate > peakStrokeRate) {
@@ -251,7 +273,7 @@ class DragonBoatModel {
 
         // Record sample for graphs
         if (currentPiece != null && pieceActive) {
-            currentPiece.recordSample(currentSpeed, strokeRate);
+            currentPiece.recordSample(currentSpeed, strokeRate, heartRate);
         }
 
         // Check if piece should end (30s since last stroke)

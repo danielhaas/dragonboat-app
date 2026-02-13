@@ -86,7 +86,14 @@ class DragonBoatView extends WatchUi.View {
         dc.drawText(centerX, y, Graphics.FONT_SMALL, "Distance", Graphics.TEXT_JUSTIFY_CENTER);
         y += 30;
         dc.drawText(centerX, y, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f") + " km", Graphics.TEXT_JUSTIFY_CENTER);
-        
+        y += 35;
+
+        // Heart Rate
+        dc.drawText(centerX, y, Graphics.FONT_SMALL, "Heart Rate", Graphics.TEXT_JUSTIFY_CENTER);
+        y += 30;
+        var hrText = model.heartRate > 0 ? model.heartRate.toString() + " bpm" : "-- bpm";
+        dc.drawText(centerX, y, Graphics.FONT_MEDIUM, hrText, Graphics.TEXT_JUSTIFY_CENTER);
+
         // Piece detection status indicator
         y = height - 30;
         if (model.isPieceDetectionEnabled()) {
@@ -154,10 +161,20 @@ class DragonBoatView extends WatchUi.View {
             dc.drawText(threeQuarterX, 125, Graphics.FONT_XTINY, "m", Graphics.TEXT_JUSTIFY_CENTER);
             dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-            // Bottom: Max Speed
-            dc.drawText(centerX, 195, Graphics.FONT_SMALL, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
+            // Bottom 2x2 grid: Max Speed, Current HR, Max HR, Avg HR
             var maxSpeedKmh = displayPiece.maxSpeed * 3.6;
-            dc.drawText(centerX, 220, Graphics.FONT_MEDIUM, maxSpeedKmh.format("%.1f") + " km/h", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 190, Graphics.FONT_XTINY, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 203, Graphics.FONT_SMALL, maxSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+
+            var curHrText = model.heartRate > 0 ? model.heartRate.toString() : "--";
+            dc.drawText(threeQuarterX, 190, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(threeQuarterX, 203, Graphics.FONT_SMALL, curHrText, Graphics.TEXT_JUSTIFY_CENTER);
+
+            dc.drawText(quarterX, 225, Graphics.FONT_XTINY, "Max HR", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 238, Graphics.FONT_SMALL, displayPiece.maxHeartRate > 0 ? displayPiece.maxHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
+
+            dc.drawText(threeQuarterX, 225, Graphics.FONT_XTINY, "Avg HR", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(threeQuarterX, 238, Graphics.FONT_SMALL, displayPiece.avgHeartRate > 0 ? displayPiece.avgHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
         } else {
             // No active piece
             dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM, "Start paddling...", Graphics.TEXT_JUSTIFY_CENTER);
