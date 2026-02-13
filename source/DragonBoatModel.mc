@@ -22,6 +22,11 @@ class Piece {
     var lastSampleTime;    // Time of last sample
     const SAMPLE_INTERVAL = 1000; // 1 second between samples
 
+    // Start/Chug phase detection
+    var startPhaseEndIndex; // Sample index where start phase ends (null until detected)
+    var peakStrokeRate;     // Highest stroke rate seen so far during piece
+    const PHASE_DROP_PERCENT = 25; // Stroke rate must drop 25% from peak to trigger transition
+
     function initialize() {
         strokeCount = 0;
         distance = 0.0;
@@ -37,6 +42,10 @@ class Piece {
         strokeRateHistory = [];
         sampleTimes = [];
         lastSampleTime = startTime;
+
+        // Phase detection
+        startPhaseEndIndex = null;
+        peakStrokeRate = 0.0;
     }
 
     // Calculate duration when piece ends
@@ -74,7 +83,76 @@ class Piece {
             strokeRateHistory.add(strokeRate);
             sampleTimes.add((currentTime - startTime) / 1000.0); // Relative time in seconds
             lastSampleTime = currentTime;
+
+            // Phase detection: track peak stroke rate
+            if (strokeRate > peakStrokeRate) {
+                peakStrokeRate = strokeRate;
+            }
+
+            // Detect start-to-chug transition once
+            if (startPhaseEndIndex == null && speedHistory.size() >= 3 && peakStrokeRate > 0) {
+                var dropThreshold = peakStrokeRate * (1.0 - PHASE_DROP_PERCENT / 100.0);
+                if (strokeRate <= dropThreshold) {
+                    startPhaseEndIndex = speedHistory.size() - 1;
+                }
+            }
         }
+    }
+
+    // Get max speed during start phase
+    function getStartMaxSpeed() {
+        if (startPhaseEndIndex == null || startPhaseEndIndex == 0) {
+            return 0.0;
+        }
+        var maxVal = 0.0;
+        for (var i = 0; i < startPhaseEndIndex; i++) {
+            if (speedHistory[i] > maxVal) {
+                maxVal = speedHistory[i];
+            }
+        }
+        return maxVal;
+    }
+
+    // Get max stroke rate during start phase
+    function getStartMaxStrokeRate() {
+        if (startPhaseEndIndex == null || startPhaseEndIndex == 0) {
+            return 0.0;
+        }
+        var maxVal = 0.0;
+        for (var i = 0; i < startPhaseEndIndex; i++) {
+            if (strokeRateHistory[i] > maxVal) {
+                maxVal = strokeRateHistory[i];
+            }
+        }
+        return maxVal;
+    }
+
+    // Get average speed during chug phase
+    function getChugAvgSpeed() {
+        if (startPhaseEndIndex == null || startPhaseEndIndex >= speedHistory.size()) {
+            return 0.0;
+        }
+        var sum = 0.0;
+        var count = 0;
+        for (var i = startPhaseEndIndex; i < speedHistory.size(); i++) {
+            sum += speedHistory[i];
+            count++;
+        }
+        return count > 0 ? sum / count : 0.0;
+    }
+
+    // Get average stroke rate during chug phase
+    function getChugAvgStrokeRate() {
+        if (startPhaseEndIndex == null || startPhaseEndIndex >= strokeRateHistory.size()) {
+            return 0.0;
+        }
+        var sum = 0.0;
+        var count = 0;
+        for (var i = startPhaseEndIndex; i < strokeRateHistory.size(); i++) {
+            sum += strokeRateHistory[i];
+            count++;
+        }
+        return count > 0 ? sum / count : 0.0;
     }
 }
 

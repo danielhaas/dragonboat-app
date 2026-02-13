@@ -329,12 +329,36 @@ class DragonBoatView extends WatchUi.View {
 
         var displayPiece = model.getDisplayPiece();
         if (displayPiece != null && displayPiece.speedHistory.size() >= 2) {
-            // Graph dimensions
+            var phaseEndIndex = displayPiece.startPhaseEndIndex;
+
+            // Phase summary text below title
+            if (phaseEndIndex != null) {
+                var startMaxSpeed = displayPiece.getStartMaxSpeed() * 3.6;
+                var startMaxSPM = displayPiece.getStartMaxStrokeRate();
+                var chugAvgSpeed = displayPiece.getChugAvgSpeed() * 3.6;
+                var chugAvgSPM = displayPiece.getChugAvgStrokeRate();
+
+                dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(centerX, 20, Graphics.FONT_XTINY,
+                    "START: " + startMaxSpeed.format("%.1f") + "km/h " + startMaxSPM.format("%.0f") + "spm",
+                    Graphics.TEXT_JUSTIFY_CENTER);
+                dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(centerX, 33, Graphics.FONT_XTINY,
+                    "CHUG: " + chugAvgSpeed.format("%.1f") + "km/h " + chugAvgSPM.format("%.0f") + "spm",
+                    Graphics.TEXT_JUSTIFY_CENTER);
+                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            } else {
+                dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+                dc.drawText(centerX, 22, Graphics.FONT_XTINY, "No phase split detected", Graphics.TEXT_JUSTIFY_CENTER);
+                dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            }
+
+            // Graph dimensions - shifted down to make room for phase text
             var graphMargin = 25;
             var graphWidth = width - 2 * graphMargin;
-            var graphHeight = 80;
-            var speedGraphY = 30;
-            var strokeRateGraphY = 140;
+            var graphHeight = 70;
+            var speedGraphY = 48;
+            var strokeRateGraphY = 145;
 
             // Convert speed from m/s to km/h
             var speedKmh = [];
@@ -342,13 +366,13 @@ class DragonBoatView extends WatchUi.View {
                 speedKmh.add(displayPiece.speedHistory[i] * 3.6);
             }
 
-            // Draw Speed graph
+            // Draw Speed graph (blue for chug, red for start)
             drawBarGraph(dc, graphMargin, speedGraphY, graphWidth, graphHeight,
-                        speedKmh, "Speed (km/h)", Graphics.COLOR_BLUE);
+                        speedKmh, "Speed (km/h)", Graphics.COLOR_BLUE, phaseEndIndex);
 
-            // Draw Stroke Rate graph
+            // Draw Stroke Rate graph (green for chug, red for start)
             drawBarGraph(dc, graphMargin, strokeRateGraphY, graphWidth, graphHeight,
-                        displayPiece.strokeRateHistory, "Stroke Rate (spm)", Graphics.COLOR_GREEN);
+                        displayPiece.strokeRateHistory, "Stroke Rate (spm)", Graphics.COLOR_GREEN, phaseEndIndex);
         } else {
             // Not enough data yet
             dc.drawText(centerX, height / 2, Graphics.FONT_MEDIUM,
@@ -356,8 +380,8 @@ class DragonBoatView extends WatchUi.View {
         }
     }
 
-    // Helper function to draw a bar graph
-    function drawBarGraph(dc, x, y, width, height, data, label, color) {
+    // Helper function to draw a bar graph with optional phase coloring
+    function drawBarGraph(dc, x, y, width, height, data, label, color, phaseEndIndex) {
         // Draw title
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(x + width / 2, y - 2, Graphics.FONT_XTINY, label, Graphics.TEXT_JUSTIFY_CENTER);
@@ -382,21 +406,31 @@ class DragonBoatView extends WatchUi.View {
             maxValue = 1.0;
         }
 
-        // Draw bars with fixed 60 bar resolution
+        // Calculate phase boundary in bar-space
         var NUM_BARS = 60;
         var barWidth = width / NUM_BARS;
         if (barWidth < 1) {
             barWidth = 1;
         }
 
-        dc.setColor(color, Graphics.COLOR_TRANSPARENT);
-        
+        var phaseBoundaryBar = -1;
+        if (phaseEndIndex != null && data.size() > 0) {
+            phaseBoundaryBar = (phaseEndIndex * NUM_BARS) / data.size();
+        }
+
         // Interpolate data to NUM_BARS bars
         for (var barIndex = 0; barIndex < NUM_BARS; barIndex++) {
+            // Choose color based on phase
+            if (phaseBoundaryBar >= 0 && barIndex < phaseBoundaryBar) {
+                dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
+            } else {
+                dc.setColor(color, Graphics.COLOR_TRANSPARENT);
+            }
+
             // Map bar index to data index
             var dataIndex = (barIndex * data.size()) / NUM_BARS;
             var value;
-            
+
             if (dataIndex >= data.size() - 1) {
                 // Use last value
                 value = data[data.size() - 1];
@@ -407,12 +441,19 @@ class DragonBoatView extends WatchUi.View {
                 var fraction = dataIndex - lowerIndex;
                 value = data[lowerIndex] * (1 - fraction) + data[upperIndex] * fraction;
             }
-            
+
             var barHeight = (value / maxValue) * (height - 5);
             var barX = x + (barIndex * barWidth);
             var barY = y + 15 + height - barHeight;
 
             dc.fillRectangle(barX, barY, barWidth - 1, barHeight);
+        }
+
+        // Draw vertical divider line at phase boundary
+        if (phaseBoundaryBar >= 0 && phaseBoundaryBar < NUM_BARS) {
+            var dividerX = x + (phaseBoundaryBar * barWidth);
+            dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);
+            dc.drawLine(dividerX, y + 15, dividerX, y + 15 + height);
         }
 
         // Draw max value label
