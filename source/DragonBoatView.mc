@@ -131,7 +131,7 @@ class DragonBoatView extends WatchUi.View {
         var clockTime = System.getClockTime();
         var timeStr = clockTime.hour.format("%02d") + ":" + clockTime.min.format("%02d");
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(centerX, height - 30, Graphics.FONT_TINY, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(centerX, height - 30, Graphics.FONT_SMALL, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
@@ -190,31 +190,25 @@ class DragonBoatView extends WatchUi.View {
             dc.drawText(threeQuarterX, 125, Graphics.FONT_XTINY, "m", Graphics.TEXT_JUSTIFY_CENTER);
             dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-            // Bottom 2x2 grid: Max Speed, Current HR, Max HR, Avg HR
+            // Bottom row: Max Speed, Max HR, Avg HR
+            var thirdX = width / 6;
             var maxSpeedKmh = displayPiece.maxSpeed * 3.6;
-            dc.drawText(quarterX, 190, Graphics.FONT_XTINY, "Max Speed", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(quarterX, 203, Graphics.FONT_SMALL, maxSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(thirdX, 195, Graphics.FONT_XTINY, "Max Spd", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(thirdX, 210, Graphics.FONT_SMALL, maxSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-            var curHrText = model.heartRate > 0 ? model.heartRate.toString() : "--";
-            dc.drawText(threeQuarterX, 190, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
-            if (model.heartRate > 0) {
-                dc.setColor(getHeartRateColor(model.heartRate), Graphics.COLOR_TRANSPARENT);
-            }
-            dc.drawText(threeQuarterX, 203, Graphics.FONT_SMALL, curHrText, Graphics.TEXT_JUSTIFY_CENTER);
-            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-
-            dc.drawText(quarterX, 225, Graphics.FONT_XTINY, "Max HR", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(centerX, 195, Graphics.FONT_XTINY, "Max HR", Graphics.TEXT_JUSTIFY_CENTER);
             if (displayPiece.maxHeartRate > 0) {
                 dc.setColor(getHeartRateColor(displayPiece.maxHeartRate), Graphics.COLOR_TRANSPARENT);
             }
-            dc.drawText(quarterX, 238, Graphics.FONT_SMALL, displayPiece.maxHeartRate > 0 ? displayPiece.maxHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(centerX, 210, Graphics.FONT_SMALL, displayPiece.maxHeartRate > 0 ? displayPiece.maxHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
 
-            dc.drawText(threeQuarterX, 225, Graphics.FONT_XTINY, "Avg HR", Graphics.TEXT_JUSTIFY_CENTER);
+            var fiveSixthX = (width * 5) / 6;
+            dc.drawText(fiveSixthX, 195, Graphics.FONT_XTINY, "Avg HR", Graphics.TEXT_JUSTIFY_CENTER);
             if (displayPiece.avgHeartRate > 0) {
                 dc.setColor(getHeartRateColor(displayPiece.avgHeartRate), Graphics.COLOR_TRANSPARENT);
             }
-            dc.drawText(threeQuarterX, 238, Graphics.FONT_SMALL, displayPiece.avgHeartRate > 0 ? displayPiece.avgHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(fiveSixthX, 210, Graphics.FONT_SMALL, displayPiece.avgHeartRate > 0 ? displayPiece.avgHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         } else {
             // No active piece
@@ -383,7 +377,7 @@ class DragonBoatView extends WatchUi.View {
         var clockTime = System.getClockTime();
         var timeStr = clockTime.hour.format("%02d") + ":" + clockTime.min.format("%02d");
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(width / 2, 205, Graphics.FONT_XTINY, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(width / 2, 205, Graphics.FONT_SMALL, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
