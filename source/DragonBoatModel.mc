@@ -291,19 +291,22 @@ class DragonBoatModel {
 
             if (xSamples != null && ySamples != null && zSamples != null) {
                 var numSamples = xSamples.size();
+                // Calculate per-sample timestamps based on 25 Hz sample rate.
+                // Samples span the last batch period, so space them accordingly.
+                var batchTime = System.getTimer();
+                var samplePeriod = 1000 / 25; // 40ms per sample at 25 Hz
                 for (var i = 0; i < numSamples; i++) {
-                    detectStroke(xSamples[i], ySamples[i], zSamples[i]);
+                    var sampleTime = batchTime - ((numSamples - 1 - i) * samplePeriod);
+                    detectStroke(xSamples[i], ySamples[i], zSamples[i], sampleTime);
                 }
             }
         }
     }
 
     // Detect strokes from accelerometer data (single sample)
-    function detectStroke(x, y, z) {
-        var currentTime = System.getTimer();
-
+    function detectStroke(x, y, z, sampleTime) {
         // Cooldown check - don't detect strokes too frequently
-        if (currentTime - lastStrokeTime < STROKE_COOLDOWN) {
+        if (sampleTime - lastStrokeTime < STROKE_COOLDOWN) {
             lastAccelData = [x, y, z];
             return;
         }
@@ -320,7 +323,7 @@ class DragonBoatModel {
             // If magnitude exceeds threshold, count as a stroke
             if (magnitude > ACCEL_THRESHOLD) {
                 registerStroke();
-                lastStrokeTime = currentTime;
+                lastStrokeTime = sampleTime;
             }
         }
 
