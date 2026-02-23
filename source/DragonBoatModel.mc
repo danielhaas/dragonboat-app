@@ -201,7 +201,7 @@ class DragonBoatModel {
     var lastAccelData;
     var strokeBuffer;
     var lastStrokeTime;
-    const STROKE_COOLDOWN = 200; // milliseconds between strokes
+    const STROKE_COOLDOWN = 500; // milliseconds between strokes (120 SPM max)
     const ACCEL_THRESHOLD = 1.5; // g-force threshold for stroke detection
 
     // Activity session
