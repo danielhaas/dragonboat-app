@@ -317,9 +317,7 @@ class DragonBoatView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
         var hrDisplay = model.heartRate > 0 ? model.heartRate.toString() : "--";
-        if (model.heartRate > 0) {
-            dc.setColor(getHeartRateColor(model.heartRate), Graphics.COLOR_TRANSPARENT);
-        }
+        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, hrDisplay, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
@@ -377,7 +375,7 @@ class DragonBoatView extends WatchUi.View {
         var clockTime = System.getClockTime();
         var timeStr = clockTime.hour.format("%02d") + ":" + clockTime.min.format("%02d");
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(width / 2, 205, Graphics.FONT_SMALL, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(width / 2, 192, Graphics.FONT_SMALL, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 

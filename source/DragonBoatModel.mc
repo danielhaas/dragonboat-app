@@ -245,13 +245,15 @@ class DragonBoatModel {
 
     // Update with new position data
     function updatePosition(info) {
-        // Get speed - prefer Activity.getActivityInfo() (firmware sensor fusion)
-        // over Position.Info.speed (raw GPS, often null on some devices)
-        var activityInfo = Activity.getActivityInfo();
-        if (activityInfo != null && activityInfo.currentSpeed != null) {
-            currentSpeed = activityInfo.currentSpeed;
-        } else if (info has :speed && info.speed != null) {
+        // Get speed - prefer raw GPS for responsiveness,
+        // fall back to Activity sensor fusion if raw GPS unavailable
+        if (info has :speed && info.speed != null) {
             currentSpeed = info.speed;
+        } else {
+            var activityInfo = Activity.getActivityInfo();
+            if (activityInfo != null && activityInfo.currentSpeed != null) {
+                currentSpeed = activityInfo.currentSpeed;
+            }
         }
 
         // Calculate distance if we have a previous position
@@ -460,12 +462,6 @@ class DragonBoatModel {
     // Update elapsed time
     function updateElapsedTime() {
         elapsedTime = (System.getTimer() - sessionStartTime) / 1000; // seconds
-
-        // Poll speed from activity info for more responsive updates
-        var activityInfo = Activity.getActivityInfo();
-        if (activityInfo != null && activityInfo.currentSpeed != null) {
-            currentSpeed = activityInfo.currentSpeed;
-        }
 
         checkPieceEnd();
     }
