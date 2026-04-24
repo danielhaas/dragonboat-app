@@ -151,19 +151,15 @@ class DragonBoatView extends WatchUi.View {
         if (displayPiece != null) {
             var minutes, seconds, milliseconds;
             
-            // For completed pieces, use actual millisecond precision
+            // For completed pieces, use actual millisecond precision.
+            // Prefer the analyzed (trimmed) duration if the offline
+            // analyzer has run on this piece — that excludes warmup/coast.
             if (isCompleted) {
-                var durationMs = displayPiece.getDurationMs();
-                // Debug: force some test values if getting 0
-                if (durationMs % 1000 == 0) {
-                    // If it's exactly on a second boundary, add some test milliseconds
-                    durationMs += (durationMs / 1000).toNumber() % 100; // Add some variance
-                }
-                minutes = (durationMs / 60000).toNumber(); // Convert ms to minutes
-                seconds = ((durationMs % 60000) / 1000).toNumber(); // Get remaining seconds  
-                // Get centiseconds (hundredths) - ensure we get actual fractional part
+                var durationMs = displayPiece.getBestDurationMs();
+                minutes = (durationMs / 60000).toNumber();
+                seconds = ((durationMs % 60000) / 1000).toNumber();
                 var remainderMs = durationMs % 1000;
-                milliseconds = (remainderMs / 10).toNumber(); // Convert to centiseconds
+                milliseconds = (remainderMs / 10).toNumber();
             } else {
                 // For active pieces, use normal duration without milliseconds
                 var pieceDuration = displayPiece.getCurrentDuration();
@@ -184,8 +180,9 @@ class DragonBoatView extends WatchUi.View {
             }
 
             // Middle row: Strokes (left) and Distance (right)
+            // Prefer analyzed stroke count when available (completed pieces).
             dc.drawText(quarterX, 125, Graphics.FONT_XTINY, "Strokes", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(quarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.getBestStrokeCount().toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
             dc.drawText(threeQuarterX, 125, Graphics.FONT_XTINY, "m", Graphics.TEXT_JUSTIFY_CENTER);
             dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
@@ -277,7 +274,7 @@ class DragonBoatView extends WatchUi.View {
             y += lineHeight;
 
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Strokes:", Graphics.TEXT_JUSTIFY_LEFT);
-            dc.drawText(width - margin, y, Graphics.FONT_XTINY, displayPiece.strokeCount.toString(), Graphics.TEXT_JUSTIFY_RIGHT);
+            dc.drawText(width - margin, y, Graphics.FONT_XTINY, displayPiece.getBestStrokeCount().toString(), Graphics.TEXT_JUSTIFY_RIGHT);
             y += lineHeight;
 
             dc.drawText(margin, y, Graphics.FONT_XTINY, "Dist:", Graphics.TEXT_JUSTIFY_LEFT);

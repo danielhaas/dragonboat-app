@@ -3,6 +3,9 @@ using Toybox.Position;
 using Toybox.Sensor;
 using Toybox.ActivityRecording;
 using Toybox.Activity;
+using Toybox.FitContributor;
+using Toybox.Timer;
+using Toybox.WatchUi;
 
 // Class to track a single piece
 class Piece {
@@ -33,6 +36,15 @@ class Piece {
     var peakStrokeRate;     // Highest stroke rate seen so far during piece
     const PHASE_DROP_PERCENT = 25; // Stroke rate must drop 25% from peak to trigger transition
 
+    // Offline-analyzer results (populated by DragonBoatAnalyzer at piece end).
+    // These override the live strokeCount / duration when present.
+    var analyzedStrokes;          // Stroke count from offline detector (null until run)
+    var analyzedActiveStartMs;    // Active region start, ms into the piece
+    var analyzedActiveEndMs;      // Active region end, ms into the piece
+    var analyzedActiveDurationMs; // analyzedActiveEndMs - analyzedActiveStartMs
+    var analyzedAvgSpm;           // Strokes / activeDuration × 60
+    var analyzedCadenceMs;        // Autocorrelation-detected cycle length
+
     function initialize() {
         strokeCount = 0;
         distance = 0.0;
@@ -58,6 +70,14 @@ class Piece {
         // Phase detection
         startPhaseEndIndex = null;
         peakStrokeRate = 0.0;
+
+        // Offline analyzer results — null until analyze() is called
+        analyzedStrokes = null;
+        analyzedActiveStartMs = 0;
+        analyzedActiveEndMs = 0;
+        analyzedActiveDurationMs = 0;
+        analyzedAvgSpm = 0.0;
+        analyzedCadenceMs = 0;
     }
 
     // Calculate duration when piece ends
@@ -83,6 +103,27 @@ class Piece {
         } else {
             return System.getTimer() - startTimeMs;
         }
+    }
+
+    // Best stroke count: analyzed value if available, otherwise live count.
+    function getBestStrokeCount() {
+        if (analyzedStrokes != null) {
+            return analyzedStrokes;
+        }
+        return strokeCount;
+    }
+
+    // Best duration in ms: trimmed active duration if analyzed, else raw piece duration.
+    function getBestDurationMs() {
+        if (analyzedStrokes != null && analyzedActiveDurationMs > 0) {
+            return analyzedActiveDurationMs;
+        }
+        return getDurationMs();
+    }
+
+    // True if this piece has been analyzed offline.
+    function isAnalyzed() {
+        return analyzedStrokes != null;
     }
 
     // Record a sample for graphs
@@ -198,15 +239,64 @@ class DragonBoatModel {
     const PIECE_END_DURATION = 5000; // 5 seconds in milliseconds
 
     // Stroke detection
-    var lastAccelData;
-    var strokeBuffer;
-    var lastStrokeTime;
-    const STROKE_COOLDOWN = 500; // milliseconds between strokes (120 SPM max)
-    const ACCEL_THRESHOLD = 1.5; // g-force threshold for stroke detection
+    //
+    // Look-ahead local-maximum detector. Each sample we compute |a| in g,
+    // subtract a slow gravity baseline, and push the absolute deviation
+    // into a small ring buffer. A stroke is committed when the *center*
+    // sample of that buffer is a strict local max above PEAK_THRESHOLD_G.
+    // This introduces a fixed ~PEAK_HALF_INDEX*40ms latency which is
+    // acceptable since the watch is not glanced at while paddling.
+    var strokeBuffer;     // timestamps of confirmed strokes (for SPM calc)
+    var lastStrokeTime;   // timestamp of most recently confirmed stroke
+    var peakBufMag;       // ring buffer of dynamic magnitudes (g)
+    var peakBufTime;      // ring buffer of sample timestamps (ms)
+    var peakBufFilled;    // number of valid samples in the ring (until full)
+    var gravityEMA;       // slow-moving estimate of gravity magnitude (g)
+
+    const PEAK_BUF_SIZE = 21;          // 21 samples @25Hz = 840ms window
+    const PEAK_HALF_INDEX = 10;        // center of the ring (±400ms)
+    const PEAK_THRESHOLD_G = 0.3;      // dynamic |a-g| required at the peak
+    const MIN_STROKE_INTERVAL = 300;   // ms between confirmed strokes (200 SPM ceiling)
+    const GRAVITY_EMA_ALPHA = 0.01;    // gravity baseline update rate
 
     // Activity session
     var session;
     var sessionStartTime;
+
+    // Accelerometer logging to FIT developer fields.
+    // Each 1-second FIT record stores the batch of ~25 raw accel samples
+    // as three SINT16 array fields (x, y, z) plus a sample count field.
+    // This adds ~150 bytes/record to the FIT file.
+    var accelXField;
+    var accelYField;
+    var accelZField;
+    var accelNField;
+    const ACCEL_LOG_BATCH = 25; // max samples per FIT record (matches 25 Hz × 1s)
+
+    // Per-piece raw sample buffer for offline analysis.
+    // Stores |a| in milli-g as one big-endian sint16 per sample (2 bytes).
+    // x,y,z are collapsed to magnitude in the sensor callback so the
+    // analyzer only has to stream int16s. Capped at 5 minutes @ 25 Hz
+    // = 7500 samples × 2 bytes = 15000 bytes.
+    var sampleBuffer;
+    var numBufferedSamples;
+    const SAMPLE_BUFFER_MAX_SAMPLES = 7500;
+    const SAMPLE_BUFFER_BYTES = 15000; // 7500 × 2
+
+    // Offline analyzer instance (one per app, reused per piece)
+    var analyzer;
+
+    // Piece-analysis state. endPiece() kicks off an AnalyzerJob that is
+    // stepped chunk-by-chunk by a Timer callback, so the UI never blocks
+    // on the analyzer and the watchdog never sees a long invocation.
+    // A fresh ByteArray snapshot is handed to the job so a new piece
+    // starting during analysis doesn't overwrite samples being analyzed.
+    var pieceAnalyzeTimer;
+    var pieceAnalyzeJob;
+    var pieceAnalyzePiece;   // the Piece whose results we'll populate
+    // Chunk size is tuned for a real fenix watch: ~150 samples × ~1–2 ms
+    // per sample leaves comfortable margin under the ~1.5 s watchdog.
+    const PIECE_CHUNK_SAMPLES = 150;
 
     // Last position for distance calculation
     var lastPosition;
@@ -227,12 +317,31 @@ class DragonBoatModel {
 
         lastPieceStrokeTime = 0;
 
-        lastAccelData = null;
         strokeBuffer = [];
         lastStrokeTime = 0;
 
+        // Initialize the peak-detection ring buffer
+        peakBufMag = new [PEAK_BUF_SIZE];
+        peakBufTime = new [PEAK_BUF_SIZE];
+        for (var i = 0; i < PEAK_BUF_SIZE; i++) {
+            peakBufMag[i] = 0.0;
+            peakBufTime[i] = 0;
+        }
+        peakBufFilled = 0;
+        gravityEMA = 1.0; // start at 1g and let the EMA settle
+
         lastPosition = null;
         sessionStartTime = System.getTimer();
+
+        // Allocate the per-piece sample buffer once at app start to avoid
+        // heap fragmentation from reallocating large ByteArrays.
+        sampleBuffer = new [SAMPLE_BUFFER_BYTES]b;
+        numBufferedSamples = 0;
+        analyzer = new DragonBoatAnalyzer();
+
+        pieceAnalyzeTimer = null;
+        pieceAnalyzeJob = null;
+        pieceAnalyzePiece = null;
 
         // Start activity recording session
         session = ActivityRecording.createSession({
@@ -240,6 +349,26 @@ class DragonBoatModel {
             :sport => ActivityRecording.SPORT_PADDLING,
             :subSport => ActivityRecording.SUB_SPORT_GENERIC
         });
+
+        // Create developer fields for raw accelerometer logging.
+        // Three SINT16 arrays (x/y/z, 25 elements each) + one UINT8 count.
+        // These get written into each 1-second FIT record automatically.
+        accelXField = session.createField("accel_x", 0,
+            FitContributor.DATA_TYPE_SINT16,
+            {:mesgType => FitContributor.MESG_TYPE_RECORD,
+             :count => ACCEL_LOG_BATCH, :units => "mg"});
+        accelYField = session.createField("accel_y", 1,
+            FitContributor.DATA_TYPE_SINT16,
+            {:mesgType => FitContributor.MESG_TYPE_RECORD,
+             :count => ACCEL_LOG_BATCH, :units => "mg"});
+        accelZField = session.createField("accel_z", 2,
+            FitContributor.DATA_TYPE_SINT16,
+            {:mesgType => FitContributor.MESG_TYPE_RECORD,
+             :count => ACCEL_LOG_BATCH, :units => "mg"});
+        accelNField = session.createField("accel_n", 3,
+            FitContributor.DATA_TYPE_UINT8,
+            {:mesgType => FitContributor.MESG_TYPE_RECORD, :units => "samples"});
+
         session.start();
     }
 
@@ -301,41 +430,116 @@ class DragonBoatModel {
                     var sampleTime = batchTime - ((numSamples - 1 - i) * samplePeriod);
                     detectStroke(xSamples[i], ySamples[i], zSamples[i], sampleTime);
                 }
+
+                // Log raw samples to FIT developer fields.
+                // Pad/truncate to ACCEL_LOG_BATCH so the field arrays are fixed-size.
+                var n = numSamples < ACCEL_LOG_BATCH ? numSamples : ACCEL_LOG_BATCH;
+                var xPad = new [ACCEL_LOG_BATCH];
+                var yPad = new [ACCEL_LOG_BATCH];
+                var zPad = new [ACCEL_LOG_BATCH];
+                for (var j = 0; j < ACCEL_LOG_BATCH; j++) {
+                    if (j < n) {
+                        xPad[j] = xSamples[j];
+                        yPad[j] = ySamples[j];
+                        zPad[j] = zSamples[j];
+                    } else {
+                        xPad[j] = 0;
+                        yPad[j] = 0;
+                        zPad[j] = 0;
+                    }
+                }
+                accelXField.setData(xPad);
+                accelYField.setData(yPad);
+                accelZField.setData(zPad);
+                accelNField.setData(n);
+
+                // Append |a| samples to the per-piece buffer for offline
+                // analysis. Magnitude is computed here so the analyzer only
+                // streams int16s. Drops samples once the 5-min cap is reached.
+                if (pieceActive
+                        && numBufferedSamples < SAMPLE_BUFFER_MAX_SAMPLES) {
+                    for (var j = 0; j < numSamples; j++) {
+                        if (numBufferedSamples >= SAMPLE_BUFFER_MAX_SAMPLES) {
+                            break;
+                        }
+                        var sx = xSamples[j];
+                        var sy = ySamples[j];
+                        var sz = zSamples[j];
+                        var magMg = Math.sqrt(sx*sx + sy*sy + sz*sz).toNumber();
+                        appendBufferMag(magMg);
+                    }
+                }
             }
         }
     }
 
-    // Detect strokes from accelerometer data (single sample)
+    // Detect strokes from accelerometer data (single sample).
+    //
+    // Algorithm:
+    //   1. Compute |a| in g for this sample.
+    //   2. Track a slow EMA of |a| as the gravity baseline.
+    //   3. dyn = ||a| - gravity| is the dynamic (motion) component.
+    //   4. Push dyn into a ring buffer of size PEAK_BUF_SIZE.
+    //   5. Once the ring is full, look at the *center* element of the
+    //      ring. If it is strictly larger than every other element in
+    //      the ring AND exceeds PEAK_THRESHOLD_G, it is a confirmed
+    //      stroke peak. Commit the stroke at the center sample's time.
+    //   6. MIN_STROKE_INTERVAL is a sanity floor to reject impossibly
+    //      fast double-detections; the local-max requirement does most
+    //      of the rejection work.
     function detectStroke(x, y, z, sampleTime) {
-        // Cooldown check - don't detect strokes too frequently
-        if (sampleTime - lastStrokeTime < STROKE_COOLDOWN) {
-            lastAccelData = [x, y, z];
+        // Magnitude in g (raw samples are in milli-g)
+        var mag = Math.sqrt(x*x + y*y + z*z) / 1000.0;
+
+        // Update slow gravity baseline
+        gravityEMA = (1.0 - GRAVITY_EMA_ALPHA) * gravityEMA + GRAVITY_EMA_ALPHA * mag;
+
+        // Absolute deviation from gravity = dynamic motion component
+        var dyn = mag - gravityEMA;
+        if (dyn < 0) { dyn = -dyn; }
+
+        // Shift ring buffer left by one and append the new sample at the end
+        for (var i = 0; i < PEAK_BUF_SIZE - 1; i++) {
+            peakBufMag[i] = peakBufMag[i + 1];
+            peakBufTime[i] = peakBufTime[i + 1];
+        }
+        peakBufMag[PEAK_BUF_SIZE - 1] = dyn;
+        peakBufTime[PEAK_BUF_SIZE - 1] = sampleTime;
+
+        // Wait until the ring is full before looking for peaks
+        if (peakBufFilled < PEAK_BUF_SIZE) {
+            peakBufFilled++;
             return;
         }
 
-        if (lastAccelData != null) {
-            // Calculate magnitude of acceleration change
-            var dx = x - lastAccelData[0];
-            var dy = y - lastAccelData[1];
-            var dz = z - lastAccelData[2];
+        // Examine the center sample as a candidate peak
+        var centerVal = peakBufMag[PEAK_HALF_INDEX];
+        var centerTime = peakBufTime[PEAK_HALF_INDEX];
 
-            // Convert from milli-g to g (1000 milli-g = 1g)
-            var magnitude = Math.sqrt(dx*dx + dy*dy + dz*dz) / 1000.0;
+        if (centerVal < PEAK_THRESHOLD_G) {
+            return;
+        }
 
-            // If magnitude exceeds threshold, count as a stroke
-            if (magnitude > ACCEL_THRESHOLD) {
-                registerStroke();
-                lastStrokeTime = sampleTime;
+        // Strict local maximum check across the whole window
+        for (var i = 0; i < PEAK_BUF_SIZE; i++) {
+            if (i == PEAK_HALF_INDEX) { continue; }
+            if (peakBufMag[i] >= centerVal) {
+                return;
             }
         }
 
-        lastAccelData = [x, y, z];
+        // Sanity floor on stroke spacing
+        if (centerTime - lastStrokeTime < MIN_STROKE_INTERVAL) {
+            return;
+        }
+
+        // Confirmed stroke at the center sample's time
+        registerStroke(centerTime);
+        lastStrokeTime = centerTime;
     }
 
     // Register a stroke
-    function registerStroke() {
-        var currentTime = System.getTimer();
-
+    function registerStroke(strokeTime) {
         totalStrokes++;
 
         // Only handle piece tracking if enabled
@@ -344,24 +548,25 @@ class DragonBoatModel {
             if (!pieceActive || currentPiece == null) {
                 currentPiece = new Piece();
                 pieceActive = true;
+                // Reset the per-piece sample buffer for offline analysis
+                numBufferedSamples = 0;
             }
 
             // Add stroke to current piece
             currentPiece.strokeCount++;
-            lastPieceStrokeTime = currentTime;
+            lastPieceStrokeTime = strokeTime;
         }
 
         // Update stroke rate (strokes per minute)
-        updateStrokeRate();
+        updateStrokeRate(strokeTime);
     }
 
     // Update stroke rate calculation
-    function updateStrokeRate() {
-        var currentTime = System.getTimer();
-        strokeBuffer.add(currentTime);
+    function updateStrokeRate(strokeTime) {
+        strokeBuffer.add(strokeTime);
 
         // Keep only strokes from last 10 seconds
-        var cutoffTime = currentTime - 10000;
+        var cutoffTime = strokeTime - 10000;
         var newBuffer = [];
         for (var i = 0; i < strokeBuffer.size(); i++) {
             if (strokeBuffer[i] > cutoffTime) {
@@ -370,11 +575,12 @@ class DragonBoatModel {
         }
         strokeBuffer = newBuffer;
 
-        // Calculate rate
+        // Calculate rate from N strokes spanning N-1 intervals.
+        // (N / timeSpan) overestimates rate; (N - 1) / timeSpan is correct.
         if (strokeBuffer.size() > 1) {
-            var timeSpan = (currentTime - strokeBuffer[0]) / 1000.0; // seconds
+            var timeSpan = (strokeTime - strokeBuffer[0]) / 1000.0; // seconds
             if (timeSpan > 0) {
-                strokeRate = (strokeBuffer.size() / timeSpan) * 60.0; // per minute
+                strokeRate = ((strokeBuffer.size() - 1) / timeSpan) * 60.0; // per minute
             }
         }
     }
@@ -394,16 +600,31 @@ class DragonBoatModel {
         }
     }
 
-    // End current piece
+    // End current piece.
+    //
+    // The offline analyzer runs asynchronously via an AnalyzerJob driven
+    // by a Toybox.Timer, so we can close the piece synchronously here
+    // (UI stays responsive, checkPieceEnd returns immediately) while the
+    // multi-pass analysis completes over the following seconds. A fresh
+    // ByteArray snapshot is handed to the job so a new piece starting
+    // during analysis doesn't overwrite the samples being analyzed.
     function endPiece() {
         if (currentPiece != null && currentPiece.strokeCount >= 3) {
-            // Only save pieces with 3 or more strokes
-            // Finalize the piece at the last stroke time (not current time)
-            // This excludes the rest period from the piece duration
             currentPiece.finalize(lastPieceStrokeTime);
+
+            if (numBufferedSamples >= 25 && pieceAnalyzeJob == null) {
+                var snapshotBytes = numBufferedSamples * 2;
+                var snapshot = sampleBuffer.slice(0, snapshotBytes);
+                pieceAnalyzeJob = new AnalyzerJob(snapshot, numBufferedSamples);
+                pieceAnalyzePiece = currentPiece;
+                if (pieceAnalyzeTimer == null) {
+                    pieceAnalyzeTimer = new Timer.Timer();
+                }
+                pieceAnalyzeTimer.start(method(:pieceAnalyzeStep), 30, false);
+            }
+
             pieces.add(currentPiece);
-            
-            // Add lap to FIT file for this piece
+
             if (session != null && session.isRecording()) {
                 session.addLap();
             }
@@ -411,6 +632,52 @@ class DragonBoatModel {
         currentPiece = null;
         pieceActive = false;
         lastPieceStrokeTime = 0;
+        numBufferedSamples = 0;
+    }
+
+    // Timer tick that advances the in-flight piece analysis job. When
+    // the job finishes, its result is written back onto the stored Piece
+    // so getBestStrokeCount() / getBestDurationMs() start returning the
+    // analyzed values.
+    function pieceAnalyzeStep() {
+        if (pieceAnalyzeJob == null || pieceAnalyzePiece == null) {
+            return;
+        }
+        try {
+            var done = pieceAnalyzeJob.step(PIECE_CHUNK_SAMPLES);
+            if (done) {
+                var result = pieceAnalyzeJob.getResult();
+                pieceAnalyzePiece.analyzedStrokes = result[:strokes];
+                pieceAnalyzePiece.analyzedActiveStartMs = result[:activeStartMs];
+                pieceAnalyzePiece.analyzedActiveEndMs = result[:activeEndMs];
+                pieceAnalyzePiece.analyzedActiveDurationMs = result[:activeDurationMs];
+                pieceAnalyzePiece.analyzedAvgSpm = result[:avgSpm];
+                pieceAnalyzePiece.analyzedCadenceMs = result[:cadenceMs];
+                pieceAnalyzeJob = null;
+                pieceAnalyzePiece = null;
+                WatchUi.requestUpdate();
+                return;
+            }
+        } catch (ex) {
+            System.println("Piece analyze failed: " + ex.getErrorMessage());
+            pieceAnalyzePiece.analyzedStrokes = null;
+            pieceAnalyzeJob = null;
+            pieceAnalyzePiece = null;
+            return;
+        }
+        pieceAnalyzeTimer.start(method(:pieceAnalyzeStep), 30, false);
+    }
+
+    // Pack a single |a| (milli-g) value into the buffer as a big-endian
+    // unsigned int16 (2 bytes). |a| is always non-negative, so the full
+    // 0..65535 range is available. Clamp to that range to be safe.
+    function appendBufferMag(magMg) {
+        if (magMg < 0) { magMg = 0; }
+        if (magMg > 65535) { magMg = 65535; }
+        var off = numBufferedSamples * 2;
+        sampleBuffer[off]     = (magMg >> 8) & 0xFF;
+        sampleBuffer[off + 1] = magMg & 0xFF;
+        numBufferedSamples++;
     }
     
     // Toggle piece detection on/off
