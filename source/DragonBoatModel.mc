@@ -12,6 +12,7 @@ class Piece {
     var strokeCount;
     var distance;
     var maxSpeed;
+    var hasSpeedFix;  // true once a GPS speed with a fix arrived during the piece
     var startTime;
     var endTime;
     var duration; // in seconds
@@ -49,6 +50,7 @@ class Piece {
         strokeCount = 0;
         distance = 0.0;
         maxSpeed = 0.0;
+        hasSpeedFix = false;
         startTime = System.getTimer();
         startTimeMs = startTime; // Store raw ms
         endTime = null;
@@ -238,6 +240,14 @@ class DragonBoatModel {
     var lastPieceStrokeTime; // Time of last stroke in current piece
     const PIECE_END_DURATION = 5000; // 5 seconds in milliseconds
 
+    // Movement on the dock (getting in, adjusting) triggers short bursts
+    // of "strokes" while the boat doesn't move. A finished piece is
+    // discarded when it is both short and slow. Pieces with more strokes
+    // are kept even if slow (stationary drills, slow technique pieces),
+    // and so are pieces without any GPS fix, since their speed is unknown.
+    const STATIONARY_MAX_STROKES = 15;     // fewer strokes than this...
+    const STATIONARY_MAX_SPEED = 0.83;     // ...and never above 3 km/h (m/s)
+
     // Stroke detection
     //
     // Look-ahead local-maximum detector. Each sample we compute |a| in g,
@@ -382,13 +392,20 @@ class DragonBoatModel {
     function updatePosition(info) {
         // Get speed - prefer raw GPS for responsiveness,
         // fall back to Activity sensor fusion if raw GPS unavailable
+        var gotSpeed = false;
         if (info has :speed && info.speed != null) {
             currentSpeed = info.speed;
+            gotSpeed = !(info has :accuracy) || info.accuracy == null
+                || info.accuracy >= Position.QUALITY_POOR;
         } else {
             var activityInfo = Activity.getActivityInfo();
+            // Not counted as a fix: it can read 0 without any GPS.
             if (activityInfo != null && activityInfo.currentSpeed != null) {
                 currentSpeed = activityInfo.currentSpeed;
             }
+        }
+        if (gotSpeed && currentPiece != null && pieceActive) {
+            currentPiece.hasSpeedFix = true;
         }
 
         // Calculate distance if we have a previous position
@@ -618,7 +635,8 @@ class DragonBoatModel {
     function endPiece() {
         stopPieceIncrementalAnalysis();
 
-        if (currentPiece != null && currentPiece.strokeCount >= 3) {
+        if (currentPiece != null && currentPiece.strokeCount >= 3
+                && !isStationaryBurst(currentPiece)) {
             currentPiece.finalize(lastPieceStrokeTime);
 
             // Force one final analyzer run over the full buffer. Cancels
@@ -636,6 +654,14 @@ class DragonBoatModel {
         pieceActive = false;
         lastPieceStrokeTime = 0;
         numBufferedSamples = 0;
+    }
+
+    // A short burst of strokes while the boat never moved: dock noise,
+    // not a piece. See STATIONARY_MAX_STROKES.
+    function isStationaryBurst(piece) {
+        return piece.hasSpeedFix
+            && piece.strokeCount < STATIONARY_MAX_STROKES
+            && piece.maxSpeed < STATIONARY_MAX_SPEED;
     }
 
     // Snapshot the buffer and start (or restart) the chunked analyzer.
