@@ -6,6 +6,8 @@ base.sourcePath = source
 # Resources
 base.resourcePath = resources
 
-# Simulator replay code (source-replay/) is excluded from normal builds.
-# Build with sim.jungle layered on top to include it.
-base.excludeAnnotations = replay
+# Test-only code is excluded from normal builds. Layer an overlay on top
+# to include it:
+#   monkeyc -f "monkey.jungle;sim.jungle" ...       simulator session replay
+#   monkeyc -f "monkey.jungle;selftest.jungle" ...  analyzer self-test
+base.excludeAnnotations = replay;selftest

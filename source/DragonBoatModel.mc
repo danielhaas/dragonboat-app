@@ -36,7 +36,7 @@ class Piece {
     var peakStrokeRate;     // Highest stroke rate seen so far during piece
     const PHASE_DROP_PERCENT = 25; // Stroke rate must drop 25% from peak to trigger transition
 
-    // Offline-analyzer results (populated by DragonBoatAnalyzer at piece end).
+    // Offline-analyzer results (populated by AnalyzerJob during/after the piece).
     // These override the live strokeCount / duration when present.
     var analyzedStrokes;          // Stroke count from offline detector (null until run)
     var analyzedActiveStartMs;    // Active region start, ms into the piece
@@ -71,7 +71,7 @@ class Piece {
         startPhaseEndIndex = null;
         peakStrokeRate = 0.0;
 
-        // Offline analyzer results — null until analyze() is called
+        // Offline analyzer results — null until an AnalyzerJob completes
         analyzedStrokes = null;
         analyzedActiveStartMs = 0;
         analyzedActiveEndMs = 0;
@@ -283,9 +283,6 @@ class DragonBoatModel {
     const SAMPLE_BUFFER_MAX_SAMPLES = 7500;
     const SAMPLE_BUFFER_BYTES = 15000; // 7500 × 2
 
-    // Offline analyzer instance (one per app, reused per piece)
-    var analyzer;
-
     // Piece-analysis state. endPiece() kicks off an AnalyzerJob that is
     // stepped chunk-by-chunk by a Timer callback, so the UI never blocks
     // on the analyzer and the watchdog never sees a long invocation.
@@ -297,6 +294,15 @@ class DragonBoatModel {
     // Chunk size is tuned for a real fenix watch: ~150 samples × ~1–2 ms
     // per sample leaves comfortable margin under the ~1.5 s watchdog.
     const PIECE_CHUNK_SAMPLES = 150;
+
+    // Incremental analyzer: while a piece is active, re-run the analyzer
+    // every N seconds over the accumulated buffer and update the Piece's
+    // analyzed* fields. The view already displays getBestStrokeCount()
+    // which prefers analyzed values over the live count, so this lets
+    // the on-screen count come from the same algorithm that produces
+    // the post-piece number — no overcounting from the live detector.
+    var pieceIncrementalTimer;
+    const INCREMENTAL_ANALYZE_INTERVAL_MS = 20000;
 
     // Last position for distance calculation
     var lastPosition;
@@ -337,11 +343,11 @@ class DragonBoatModel {
         // heap fragmentation from reallocating large ByteArrays.
         sampleBuffer = new [SAMPLE_BUFFER_BYTES]b;
         numBufferedSamples = 0;
-        analyzer = new DragonBoatAnalyzer();
 
         pieceAnalyzeTimer = null;
         pieceAnalyzeJob = null;
         pieceAnalyzePiece = null;
+        pieceIncrementalTimer = null;
 
         // Start activity recording session
         session = ActivityRecording.createSession({
@@ -550,6 +556,7 @@ class DragonBoatModel {
                 pieceActive = true;
                 // Reset the per-piece sample buffer for offline analysis
                 numBufferedSamples = 0;
+                startPieceIncrementalAnalysis();
             }
 
             // Add stroke to current piece
@@ -609,19 +616,15 @@ class DragonBoatModel {
     // ByteArray snapshot is handed to the job so a new piece starting
     // during analysis doesn't overwrite the samples being analyzed.
     function endPiece() {
+        stopPieceIncrementalAnalysis();
+
         if (currentPiece != null && currentPiece.strokeCount >= 3) {
             currentPiece.finalize(lastPieceStrokeTime);
 
-            if (numBufferedSamples >= 25 && pieceAnalyzeJob == null) {
-                var snapshotBytes = numBufferedSamples * 2;
-                var snapshot = sampleBuffer.slice(0, snapshotBytes);
-                pieceAnalyzeJob = new AnalyzerJob(snapshot, numBufferedSamples);
-                pieceAnalyzePiece = currentPiece;
-                if (pieceAnalyzeTimer == null) {
-                    pieceAnalyzeTimer = new Timer.Timer();
-                }
-                pieceAnalyzeTimer.start(method(:pieceAnalyzeStep), 30, false);
-            }
+            // Force one final analyzer run over the full buffer. Cancels
+            // any incremental run still in flight (its result would be
+            // stale vs. the full buffer we have right now).
+            startAnalyzerJob(currentPiece);
 
             pieces.add(currentPiece);
 
@@ -633,6 +636,46 @@ class DragonBoatModel {
         pieceActive = false;
         lastPieceStrokeTime = 0;
         numBufferedSamples = 0;
+    }
+
+    // Snapshot the buffer and start (or restart) the chunked analyzer.
+    // Cancels any in-flight job so the newest snapshot wins.
+    function startAnalyzerJob(piece) {
+        if (numBufferedSamples < 25) {
+            return;
+        }
+        var snapshotBytes = numBufferedSamples * 2;
+        var snapshot = sampleBuffer.slice(0, snapshotBytes);
+        pieceAnalyzeJob = new AnalyzerJob(snapshot, numBufferedSamples);
+        pieceAnalyzePiece = piece;
+        if (pieceAnalyzeTimer == null) {
+            pieceAnalyzeTimer = new Timer.Timer();
+        }
+        pieceAnalyzeTimer.start(method(:pieceAnalyzeStep), 30, false);
+    }
+
+    function startPieceIncrementalAnalysis() {
+        if (pieceIncrementalTimer == null) {
+            pieceIncrementalTimer = new Timer.Timer();
+        }
+        pieceIncrementalTimer.start(method(:pieceIncrementalTick),
+            INCREMENTAL_ANALYZE_INTERVAL_MS, true);
+    }
+
+    function stopPieceIncrementalAnalysis() {
+        if (pieceIncrementalTimer != null) {
+            pieceIncrementalTimer.stop();
+        }
+    }
+
+    // Fired every INCREMENTAL_ANALYZE_INTERVAL_MS while a piece is
+    // active. Skips this tick if a previous run hasn't finished yet —
+    // next tick will catch up.
+    function pieceIncrementalTick() {
+        if (!pieceActive || currentPiece == null) { return; }
+        if (pieceAnalyzeJob != null) { return; }
+        if (numBufferedSamples < 25) { return; }
+        startAnalyzerJob(currentPiece);
     }
 
     // Timer tick that advances the in-flight piece analysis job. When

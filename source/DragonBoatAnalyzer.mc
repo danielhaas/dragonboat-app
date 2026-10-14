@@ -2,40 +2,56 @@ using Toybox.System;
 using Toybox.Math;
 using Toybox.Lang;
 
-// Streaming, multi-pass stroke-detection analyzer.
-//
-// Must finish within the Connect IQ watchdog budget (~1.5 s) because
-// analyze() runs synchronously on the UI tick from endPiece().
+// Chunked, resumable end-of-piece stroke analyzer. Each call to
+// step(maxSamples) does a bounded amount of work, then yields. The
+// caller drives stepping via Toybox.Timer so the Connect IQ watchdog
+// never sees a single long execution.
 //
 // The raw buffer holds one big-endian unsigned int16 per sample,
 // representing |a| in milli-g, sampled at 25 Hz.
 //
-// Each pass re-reads the raw buffer and recomputes the filter stream on
-// the fly. This is cheap (~30 ops/sample) and avoids materializing any
-// per-sample float arrays.
-//
-// Pipeline per sample:
+// Each streaming pass re-reads the raw buffer and recomputes the filter
+// stream on the fly, which avoids materializing per-sample float arrays:
 //   raw_mg → mag_g (÷1000)
 //          → high-pass: subtract slow MA (50-sample sliding sum)
 //          → low-pass:  3-tap MA (3-sample sliding sum)
-//          → square (rectify)
+//          → keep the load side only (bp > 0), square
 //          → dyn
 //
-// Pass 1: stream → dyn → 50-sample rolling-mean sliding sum → track
-//         max(rolling_mean) as the trim peak.
-// Pass 2: stream → dyn → rolling mean → record first/last index where
-//         rolling >= 0.2 * peak → also accumulate sum(dyn) within the
-//         active region for the noise-floor check.
-// Pass 3: stream → dyn → restricted to active region [i0, i1].
-//         Detect strict local maxima using a 3-sample window and collect
-//         them, height-gated at 4 × meanDyn. No autocorrelation —
-//         cadence is estimated from the median of peak intervals, which
-//         is O(peaks log peaks) rather than O(N × numLags).
+// Load side only: squaring the full bandpass makes both the reach dip
+// and the blade load into peaks, and which one wins NMS flips from
+// stroke to stroke — irregular intervals, merged strokes.
 //
-// After the passes: median of diff(peakIdx) gives cadence, then greedy
-// non-max suppression on the peak list at 0.8 × cadence cycle.
-class DragonBoatAnalyzer {
-
+// Pass 1: track max of the 2 s rolling mean of dyn (trim peak).
+// Pass 2: rolling-mean active region [r0, r1) = the longest run where
+//         the 2 s rolling mean >= 0.2 × peak (dips under 5 s bridged),
+//         plus meanDyn over it for the noise floor. Taking the longest
+//         run keeps a stray movement long before or after the piece
+//         from stretching the region. The rolling mean trails the
+//         signal, so it switches on late (missing the first strokes of
+//         a standing start) and off ~2 s late (picking up post-piece
+//         noise). The stroke region [i0, i1) is therefore taken from
+//         the single dyn samples above the same threshold: from the
+//         start of the hot cluster that triggered r0 to the last hot
+//         sample before r1.
+// Pass 3: collect every strict local maximum of dyn in [i0, i1) — no
+//         height gate — and store a 2× decimated, meanDyn-centred copy
+//         of dyn over a 60 s window in the middle of [r0, r1).
+// ACF:    autocorrelation of that window over lags 400 ms – 4 s gives
+//         the stroke cadence. A height gate + median-of-gaps estimate
+//         was tried first and undercounted badly: steady paddling has
+//         stroke peaks only ~2 × meanDyn, so any fixed gate either drops
+//         real strokes or lets sub-peaks set the cadence.
+// Sort:   bottom-up merge sort of the peaks by height (descending).
+// NMS:    greedy non-max suppression at 0.6 × cadence.
+// Load:   drop survivors the blade never loads after: the 5-sample MA
+//         of |a| must reach 1 g + 0.35 × (mean over survivors − 1 g)
+//         within 0.48 s. Removes small post-piece movements.
+//
+// validate_mc_analyzer.py mirrors this exactly, and
+// test_analyzer_regression.py checks it stroke by stroke against the
+// reference pieces in data/reference/.
+class AnalyzerJob {
     // ── Tunable constants ───────────────────────────────────────────
     const SAMPLE_RATE       = 25;       // Hz
     const SAMPLE_PERIOD_MS  = 40;       // 1000 / SAMPLE_RATE
@@ -48,334 +64,63 @@ class DragonBoatAnalyzer {
     const TRIM_WINDOW       = 50;       // samples (2 s rolling)
     const TRIM_THRESHOLD_PCT = 0.20;
 
-    // Noise floor on meanDyn (squared bandpassed signal). Calibrated from
-    // real paddling data: active-region meanDyn runs ~0.02–0.10. Anything
-    // under 0.005 is essentially a still watch — reject as non-paddling.
+    // Noise floor on meanDyn (squared bandpassed signal). Anything under
+    // 0.005 is essentially a still watch — reject as non-paddling.
     const NOISE_FLOOR       = 0.005;
 
-    // Cadence bounds (clamp median-of-diffs into a sane range).
+    // Cadence search range.
     const MIN_LAG           = 10;       // samples (= 400 ms = 150 SPM)
     const MAX_LAG           = 100;      // samples (= 4 s = 15 SPM)
 
-    // Non-max suppression: as a fraction of the cadence cycle.
-    const SUPPRESSION_FRAC  = 0.8;
+    // Autocorrelation runs on at most ACF_WINDOW samples from the middle
+    // of the active region, decimated by ACF_DECIMATE. This caps the
+    // cost at ~34k multiply-adds regardless of piece length; on the
+    // ground-truth pieces a 60 s window gives the same cadence as the
+    // full piece.
+    const ACF_WINDOW        = 1500;     // samples (60 s)
+    const ACF_DECIMATE      = 2;
+    // Promote the half lag if its correlation is this close to the best.
+    const HARMONIC_FRAC     = 0.8;
 
-    // ── Entry point ─────────────────────────────────────────────────
+    // Non-max suppression: as a fraction of the cadence cycle. 0.8 was
+    // too wide for the faster cycles at a race start (~0.75 s vs a
+    // 0.88 s median) and merged neighbouring strokes; 0.6 is the best
+    // fit on the per-stroke reference pieces.
+    const SUPPRESSION_FRAC  = 0.6;
 
-    // `byteBuf` is a ByteArray containing `numSamples` packed unsigned
-    // int16 values (big-endian), each = |a| in milli-g.
-    function analyze(byteBuf, numSamples) {
-        if (numSamples < SAMPLE_RATE) {
-            return emptyResult();
-        }
+    // Rolling-mean crossings less than this far apart belong to one
+    // active-region candidate; the longest candidate wins.
+    const CLUSTER_GAP       = 125;      // samples (5 s)
 
-        // Pass 1: find peak of rolling-mean(dyn).
-        var peakRolling = pass1FindPeak(byteBuf, numSamples);
-        if (peakRolling <= 0.0) {
-            return emptyResult();
-        }
+    // Stroke-region edges: hot dyn samples less than EDGE_GAP apart form
+    // one cluster; widen the edges by EDGE_MARGIN so the first/last
+    // peak still has a neighbour on each side.
+    const EDGE_GAP          = 50;       // samples (2 s)
+    const EDGE_MARGIN       = 2;
 
-        // Pass 2: find active region [i0, i1] and noise-floor mean.
-        var threshold = peakRolling * TRIM_THRESHOLD_PCT;
-        var p2 = pass2TrimAndNoise(byteBuf, numSamples, threshold);
-        var i0 = p2[0];
-        var i1 = p2[1];
-        var meanDyn = p2[2];
-        var activeLen = i1 - i0;
+    // Load check after each stroke (see header).
+    const LOAD_LOOK         = 12;       // samples (0.48 s)
+    const LOAD_MA_HALF      = 2;        // 5-sample centred MA
+    const LOAD_FRAC         = 0.35;
 
-        if (activeLen < SAMPLE_RATE) {
-            return emptyResult();
-        }
-        if (meanDyn < NOISE_FLOOR) {
-            return makeResult(0, i0, i1, 0, meanDyn);
-        }
-
-        // Pass 3: local-maxima (height-gated) over [i0, i1].
-        // Height threshold = 4 × meanDyn rejects noise peaks cheaply so the
-        // peak list stays bounded (a real 5-min piece has ~300 strokes;
-        // real stroke peaks are typically 10–50 × meanDyn).
-        var heightThreshold = meanDyn * 4.0;
-        var p3 = pass3FindPeaks(byteBuf, numSamples, i0, i1, heightThreshold);
-        var peakIdx = p3[:peakIdx];
-        var peakHeight = p3[:peakHeight];
-
-        if (peakIdx.size() == 0) {
-            return makeResult(0, i0, i1, 0, meanDyn);
-        }
-
-        var cadenceLag = estimateCadenceFromPeaks(peakIdx);
-        if (cadenceLag == null) {
-            return makeResult(0, i0, i1, 0, meanDyn);
-        }
-
-        var suppression = (cadenceLag * SUPPRESSION_FRAC).toNumber();
-        if (suppression < 5) { suppression = 5; }
-
-        var accepted = nonMaxSuppress(peakIdx, peakHeight, suppression);
-        return makeResult(accepted.size(), i0, i1, cadenceLag, meanDyn);
-    }
-
-    // ── Pass 1 ──────────────────────────────────────────────────────
-
-    // Stream the buffer, compute the filtered/squared dyn signal sample
-    // by sample, run a 50-sample sliding-sum rolling mean over dyn, and
-    // return the maximum value of that rolling mean.
-    function pass1FindPeak(byteBuf, n) {
-        var slow = new SlidingSum(SLOW_WINDOW);
-        var fast = new SlidingSum(FAST_WINDOW);
-        var roll = new SlidingSum(TRIM_WINDOW);
-        var peak = 0.0;
-
-        for (var i = 0; i < n; i++) {
-            var dyn = streamDyn(byteBuf, i, slow, fast);
-            var rollVal = roll.pushAndMean(dyn);
-            if (rollVal > peak) { peak = rollVal; }
-        }
-        return peak;
-    }
-
-    // ── Pass 2 ──────────────────────────────────────────────────────
-
-    // Same stream, but track first/last index where rolling >= threshold,
-    // and accumulate sum(dyn) for samples in [firstCross..lastCross].
-    // Returns [i0, i1, meanDyn]. If nothing crosses, returns [0, n, 0.0].
-    function pass2TrimAndNoise(byteBuf, n, threshold) {
-        var slow = new SlidingSum(SLOW_WINDOW);
-        var fast = new SlidingSum(FAST_WINDOW);
-        var roll = new SlidingSum(TRIM_WINDOW);
-
-        var first = -1;
-        var last = -1;
-
-        // We need sum(dyn) in [first, last], but we discover first/last
-        // as we go. Trick: keep a running sum of dyn since `first`, and
-        // a snapshot at `last+1` we update each time we see a crossing.
-        var sumSinceFirst = 0.0;
-        var sumAtLast = 0.0;
-
-        for (var i = 0; i < n; i++) {
-            var dyn = streamDyn(byteBuf, i, slow, fast);
-            var rollVal = roll.pushAndMean(dyn);
-
-            if (first != -1) {
-                sumSinceFirst += dyn;
-            }
-            if (rollVal >= threshold) {
-                if (first == -1) {
-                    first = i;
-                    sumSinceFirst = dyn;
-                }
-                last = i;
-                sumAtLast = sumSinceFirst;
-            }
-        }
-
-        if (first == -1) {
-            return [0, n, 0.0];
-        }
-        var i0 = first;
-        var i1 = last + 1;
-        var len = i1 - i0;
-        var meanDyn = (len > 0) ? (sumAtLast / len) : 0.0;
-        return [i0, i1, meanDyn];
-    }
-
-    // ── Pass 3 ──────────────────────────────────────────────────────
-
-    // Stream over the full buffer, processing samples in [i0, i1) to
-    // collect strict local maxima (3-sample window) above the height
-    // gate. A hard cap of 1000 peaks is a safety net — real pieces
-    // produce ~300 after the 4×meanDyn gate.
-    function pass3FindPeaks(byteBuf, n, i0, i1, heightThreshold) {
-        var slow = new SlidingSum(SLOW_WINDOW);
-        var fast = new SlidingSum(FAST_WINDOW);
-
-        var prev2 = 0.0;
-        var prev1 = 0.0;
-        var have = 0;
-
-        var peakIdx = [];
-        var peakHeight = [];
-
-        for (var i = 0; i < n; i++) {
-            if (i >= i1) { break; }
-            var dyn = streamDyn(byteBuf, i, slow, fast);
-            if (i < i0) { continue; }
-
-            if (peakIdx.size() < 1000
-                    && have >= 2 && prev1 > prev2 && prev1 > dyn
-                    && prev1 >= heightThreshold) {
-                peakIdx.add(i - 1);
-                peakHeight.add(prev1);
-            }
-
-            prev2 = prev1;
-            prev1 = dyn;
-            have++;
-        }
-
-        return {:peakIdx => peakIdx, :peakHeight => peakHeight};
-    }
-
-    // ── Per-sample stream pipeline ──────────────────────────────────
-
-    // Read raw sample i, decode |a| in g, run it through the slow MA
-    // (high-pass) and fast MA (low-pass) sliding sums, square, and
-    // return the resulting dyn value.
-    function streamDyn(byteBuf, i, slow, fast) {
-        var off = i * 2;
-        var hi = byteBuf[off];
-        var lo = byteBuf[off + 1];
-        var raw = (hi << 8) | lo;
-        var magG = raw / 1000.0;
-
-        var slowMean = slow.pushAndMean(magG);
-        var hp = magG - slowMean;
-        var bp = fast.pushAndMean(hp);
-        return bp * bp;
-    }
-
-    // ── Cadence estimate from peak intervals ────────────────────────
-
-    // Peaks are already in ascending order (collected in a left-to-right
-    // stream). Take the median of consecutive gaps, then clamp into
-    // [MIN_LAG, MAX_LAG]. Returns null if fewer than 2 peaks or the
-    // clamped median is implausible.
-    function estimateCadenceFromPeaks(peakIdx) {
-        var n = peakIdx.size();
-        if (n < 2) { return null; }
-
-        var diffs = new [n - 1];
-        for (var i = 0; i < n - 1; i++) {
-            diffs[i] = peakIdx[i + 1] - peakIdx[i];
-        }
-
-        // Insertion sort (n-1 is small — bounded by the 1000-peak cap).
-        for (var i = 1; i < diffs.size(); i++) {
-            var key = diffs[i];
-            var j = i - 1;
-            while (j >= 0 && diffs[j] > key) {
-                diffs[j + 1] = diffs[j];
-                j -= 1;
-            }
-            diffs[j + 1] = key;
-        }
-
-        var median = diffs[diffs.size() / 2];
-        if (median < MIN_LAG) { median = MIN_LAG; }
-        if (median > MAX_LAG) { median = MAX_LAG; }
-        return median;
-    }
-
-    // ── Non-max suppression (operates on the streaming peak list) ──
-
-    function nonMaxSuppress(maxima, heights, minIntervalSamples) {
-        var n = maxima.size();
-        if (n == 0) { return []; }
-
-        // Sort indices by height descending (insertion sort).
-        var order = new [n];
-        for (var i = 0; i < n; i++) { order[i] = i; }
-        for (var i = 1; i < n; i++) {
-            var key = order[i];
-            var keyVal = heights[key];
-            var j = i - 1;
-            while (j >= 0 && heights[order[j]] < keyVal) {
-                order[j + 1] = order[j];
-                j -= 1;
-            }
-            order[j + 1] = key;
-        }
-
-        var acceptedIdx = [];
-        for (var k = 0; k < n; k++) {
-            var pi = order[k];
-            var idx = maxima[pi];
-            var tooClose = false;
-            for (var a = 0; a < acceptedIdx.size(); a++) {
-                var diff = idx - acceptedIdx[a];
-                if (diff < 0) { diff = -diff; }
-                if (diff < minIntervalSamples) {
-                    tooClose = true;
-                    break;
-                }
-            }
-            if (!tooClose) {
-                acceptedIdx.add(idx);
-            }
-        }
-        return acceptedIdx;
-    }
-
-    // ── Result construction ─────────────────────────────────────────
-
-    function emptyResult() {
-        return {
-            :strokes => 0,
-            :activeStartMs => 0,
-            :activeEndMs => 0,
-            :activeDurationMs => 0,
-            :avgSpm => 0.0,
-            :cadenceMs => 0,
-            :meanDyn => 0.0,
-        };
-    }
-
-    function makeResult(strokes, i0, i1, cadenceLag, meanDyn) {
-        var startMs = i0 * SAMPLE_PERIOD_MS;
-        var endMs = i1 * SAMPLE_PERIOD_MS;
-        var durMs = endMs - startMs;
-        var spm = 0.0;
-        if (durMs > 0 && strokes > 1) {
-            spm = ((strokes - 1).toFloat() / (durMs.toFloat() / 1000.0)) * 60.0;
-        }
-        var cadenceMs = (cadenceLag != null && cadenceLag > 0)
-            ? cadenceLag * SAMPLE_PERIOD_MS : 0;
-        return {
-            :strokes => strokes,
-            :activeStartMs => startMs,
-            :activeEndMs => endMs,
-            :activeDurationMs => durMs,
-            :avgSpm => spm,
-            :cadenceMs => cadenceMs,
-            :meanDyn => meanDyn,
-        };
-    }
-
-    function initialize() {
-    }
-}
-
-// Chunked, resumable analyzer job. Each call to step(maxSamples) does
-// up to that many samples worth of work across whichever pass is active,
-// then yields. The caller drives stepping via Toybox.Timer so the
-// Connect IQ watchdog never sees a single long execution.
-//
-// Constants are duplicated from DragonBoatAnalyzer to keep this class
-// self-contained — Monkey C const access across classes is finicky.
-class AnalyzerJob {
-    // ── Constants (mirror DragonBoatAnalyzer) ───────────────────────
-    const SAMPLE_RATE       = 25;
-    const SAMPLE_PERIOD_MS  = 40;
-    const SLOW_WINDOW       = 50;
-    const FAST_WINDOW       = 3;
-    const TRIM_WINDOW       = 50;
-    const TRIM_THRESHOLD_PCT = 0.20;
-    const NOISE_FLOOR       = 0.005;
-    const MIN_LAG           = 10;
-    const MAX_LAG           = 100;
-    const SUPPRESSION_FRAC  = 0.8;
-    const FINISH_CHUNK      = 30;   // outer sort/NMS iterations per step()
+    // Per-step work budgets, as multiples of step()'s maxSamples. One
+    // streamed sample costs roughly as much as 4 multiply-adds, 4 merge
+    // writes, or 1 NMS candidate.
+    const ACF_OPS_PER_SAMPLE  = 4;
+    const SORT_OPS_PER_SAMPLE = 4;
 
     // ── State machine ───────────────────────────────────────────────
-    // 1 = PASS1, 2 = PASS2, 3 = PASS3,
-    // 4 = FINISH_INIT (one-shot; builds diffs[], transitions to 6),
-    // 6 = SORT_DIFFS (chunked insertion sort for cadence median),
-    // 7 = NMS_SORT   (chunked insertion sort of order[] by height desc),
-    // 8 = NMS_ACCEPT (chunked greedy accept),
-    // 5 = DONE
+    const ST_PASS1 = 1;
+    const ST_PASS2 = 2;
+    const ST_PASS3 = 3;
+    const ST_ACF   = 4;
+    const ST_SORT  = 6;
+    const ST_NMS   = 7;
+    const ST_LOAD  = 8;
+    const ST_DONE  = 5;
+
     var state;
-    var result;       // populated when state == 5
+    var result;       // populated when state == ST_DONE
 
     // Input
     var buf;
@@ -396,26 +141,66 @@ class AnalyzerJob {
     var last;
     var sumSinceFirst;
     var sumAtLast;
+    var hotRunStart;  // start of the current cluster of hot dyn samples
+    var lastHot;
+    var edgeStart;
+    var edgeEnd;
+    var bestR0;       // longest rolling-mean cluster so far (-1 = none)
+    var bestR1;
+    var bestSum;
+    var bestEdgeStart;
+    var bestEdgeEnd;
 
     // Pass 3
-    var i0;
+    var i0;           // stroke region [i0, i1)
     var i1;
+    var r0;           // rolling-mean active region [r0, r1)
+    var r1;
     var meanDyn;
-    var heightThreshold;
     var prev2;
     var prev1;
     var have;
-    var peakIdx;
+    var peakIdx;      // preallocated; first peakCount entries valid
     var peakHeight;
+    var peakCount;
+    var w0;           // ACF window [w0, w1)
+    var w1;
+    var dec;          // decimated, centred dyn over the ACF window
+    var decCount;
+    var pairSum;
+    var pairCount;
 
-    // Finish (chunked)
-    var diffs;          // cadence-diff array, sorted to find median
-    var order;          // peak indices sorted by peakHeight desc
-    var accepted;       // NMS-accepted peak positions
-    var sortK;          // insertion-sort outer cursor
-    var nmsK;           // NMS accept outer cursor
-    var lag;            // median cadence in samples
-    var minInterval;    // NMS min-interval (suppression)
+    // ACF
+    var acfLo;
+    var acfHi;
+    var acfLag;
+    var acfI;
+    var acfSum;
+    var corrs;
+    var lag;          // cadence in samples
+    var minInterval;  // NMS suppression window in samples
+
+    // Merge sort (order[] = peak indices sorted by height desc)
+    var order;
+    var tmp;
+    var sortWidth;
+    var sortLeft;
+    var sortMid;
+    var sortRight;
+    var sortA;
+    var sortB;
+    var sortK;
+    var merging;
+
+    // NMS
+    var taken;        // ByteArray flag per peak (time order)
+    var nmsK;
+    var strokeCount;
+
+    // Load check
+    var loads;        // load per peak; only entries with taken[] set
+    var loadK;        // cursor into peaks (time order)
+    var loadSum;
 
     function initialize(buffer, numSamples) {
         buf = buffer;
@@ -424,7 +209,7 @@ class AnalyzerJob {
 
         if (n < SAMPLE_RATE) {
             result = emptyResult();
-            state = 5;
+            state = ST_DONE;
             return;
         }
 
@@ -433,31 +218,31 @@ class AnalyzerJob {
         roll = new SlidingSum(TRIM_WINDOW);
         peak = 0.0;
         i = 0;
-        state = 1;
+        state = ST_PASS1;
     }
 
-    function isDone() { return state == 5; }
+    function isDone() { return state == ST_DONE; }
     function getResult() { return result; }
 
     // Advance by up to `maxSamples` samples of work. Returns true when
     // the job has finished (result is available via getResult()).
     function step(maxSamples) {
-        if (state == 1) {
+        if (state == ST_PASS1) {
             stepPass1(maxSamples);
-        } else if (state == 2) {
+        } else if (state == ST_PASS2) {
             stepPass2(maxSamples);
-        } else if (state == 3) {
+        } else if (state == ST_PASS3) {
             stepPass3(maxSamples);
-        } else if (state == 4) {
-            finishInit();
-        } else if (state == 6) {
-            stepSortDiffs(FINISH_CHUNK);
-        } else if (state == 7) {
-            stepNmsSort(FINISH_CHUNK);
-        } else if (state == 8) {
-            stepNmsAccept(FINISH_CHUNK);
+        } else if (state == ST_ACF) {
+            stepAcf(maxSamples * ACF_OPS_PER_SAMPLE);
+        } else if (state == ST_SORT) {
+            stepSort(maxSamples * SORT_OPS_PER_SAMPLE);
+        } else if (state == ST_NMS) {
+            stepNms(maxSamples);
+        } else if (state == ST_LOAD) {
+            stepLoad(maxSamples);
         }
-        return state == 5;
+        return state == ST_DONE;
     }
 
     // ── Pass 1: rolling-mean peak ───────────────────────────────────
@@ -472,8 +257,7 @@ class AnalyzerJob {
         }
         if (i >= n) {
             if (peak <= 0.0) {
-                result = emptyResult();
-                state = 5;
+                finish(emptyResult());
                 return;
             }
             threshold = peak * TRIM_THRESHOLD_PCT;
@@ -484,8 +268,17 @@ class AnalyzerJob {
             last = -1;
             sumSinceFirst = 0.0;
             sumAtLast = 0.0;
+            hotRunStart = -1;
+            lastHot = -EDGE_GAP - 1;
+            edgeStart = -1;
+            edgeEnd = -1;
+            bestR0 = -1;
+            bestR1 = -1;
+            bestSum = 0.0;
+            bestEdgeStart = -1;
+            bestEdgeEnd = -1;
             i = 0;
-            state = 2;
+            state = ST_PASS2;
         }
     }
 
@@ -499,174 +292,365 @@ class AnalyzerJob {
             if (first != -1) {
                 sumSinceFirst += dyn;
             }
+            if (dyn >= threshold) {
+                if (i - lastHot > EDGE_GAP) {
+                    hotRunStart = i;
+                }
+                lastHot = i;
+            }
             if (rollVal >= threshold) {
-                if (first == -1) {
+                if (first == -1 || i - last > CLUSTER_GAP) {
+                    closeCluster();
                     first = i;
                     sumSinceFirst = dyn;
+                    edgeStart = hotRunStart;
                 }
                 last = i;
                 sumAtLast = sumSinceFirst;
+                edgeEnd = lastHot;
             }
             i++;
         }
         if (i >= n) {
-            if (first == -1) {
-                i0 = 0; i1 = n; meanDyn = 0.0;
+            closeCluster();
+            if (bestR0 == -1) {
+                r0 = 0; r1 = n; meanDyn = 0.0;
+                i0 = 0; i1 = n;
             } else {
-                i0 = first;
-                i1 = last + 1;
-                var len = i1 - i0;
-                meanDyn = (len > 0) ? (sumAtLast / len) : 0.0;
+                r0 = bestR0;
+                r1 = bestR1;
+                meanDyn = bestSum / (r1 - r0);
+                // A rolling-mean crossing implies a hot sample inside the
+                // window, so the edges are always set here.
+                i0 = bestEdgeStart - EDGE_MARGIN;
+                if (i0 < 0) { i0 = 0; }
+                i1 = bestEdgeEnd + 1 + EDGE_MARGIN;
+                if (i1 > n) { i1 = n; }
             }
-            var activeLen = i1 - i0;
+            var activeLen = r1 - r0;
             if (activeLen < SAMPLE_RATE) {
-                result = emptyResult();
-                state = 5;
+                finish(emptyResult());
                 return;
             }
             if (meanDyn < NOISE_FLOOR) {
-                result = makeResult(0, i0, i1, 0, meanDyn);
-                state = 5;
+                finish(makeResult(0, i0, i1, 0, meanDyn));
                 return;
             }
-            heightThreshold = meanDyn * 4.0;
+
+            // A strict local maximum needs a lower sample on each side,
+            // so there are at most (i1 - i0) / 2 of them.
+            peakIdx = new [(i1 - i0) / 2 + 1];
+            peakHeight = new [(i1 - i0) / 2 + 1];
+            peakCount = 0;
+
+            var w = (activeLen < ACF_WINDOW) ? activeLen : ACF_WINDOW;
+            w0 = r0 + (activeLen - w) / 2;
+            w1 = w0 + w;
+            dec = new [w / ACF_DECIMATE];
+            decCount = 0;
+            pairSum = 0.0;
+            pairCount = 0;
+
             slow = new SlidingSum(SLOW_WINDOW);
             fast = new SlidingSum(FAST_WINDOW);
+            roll = null;
             prev2 = 0.0;
             prev1 = 0.0;
             have = 0;
-            peakIdx = [];
-            peakHeight = [];
             i = 0;
-            state = 3;
+            state = ST_PASS3;
         }
     }
 
-    // ── Pass 3: height-gated local maxima over [i0, i1) ─────────────
+    // Keep the current rolling-mean cluster if it is the longest so far.
+    function closeCluster() {
+        if (first != -1 && (bestR0 == -1 || last + 1 - first > bestR1 - bestR0)) {
+            bestR0 = first;
+            bestR1 = last + 1;
+            bestSum = sumAtLast;
+            bestEdgeStart = edgeStart;
+            bestEdgeEnd = edgeEnd;
+        }
+    }
+
+    // ── Pass 3: local maxima in [i0, i1) + decimated ACF window ─────
     function stepPass3(maxSamples) {
+        var stop = (i1 > w1) ? i1 : w1;
         var end = i + maxSamples;
-        if (end > i1) { end = i1; }
+        if (end > stop) { end = stop; }
         while (i < end) {
             var dyn = streamDyn(i);
-            if (i >= i0) {
-                if (peakIdx.size() < 1000
-                        && have >= 2 && prev1 > prev2 && prev1 > dyn
-                        && prev1 >= heightThreshold) {
-                    peakIdx.add(i - 1);
-                    peakHeight.add(prev1);
+            if (i >= i0 && i < i1) {
+                if (have >= 2 && prev1 > prev2 && prev1 > dyn) {
+                    peakIdx[peakCount] = i - 1;
+                    peakHeight[peakCount] = prev1;
+                    peakCount++;
                 }
                 prev2 = prev1;
                 prev1 = dyn;
                 have++;
             }
-            i++;
-        }
-        if (i >= i1) {
-            state = 4;
-        }
-    }
-
-    // ── Finish: chunked across states 4/6/7/8 to stay under watchdog ─
-    function finishInit() {
-        var m = peakIdx.size();
-        if (m < 2) {
-            result = makeResult(0, i0, i1, 0, meanDyn);
-            state = 5;
-            return;
-        }
-        diffs = new [m - 1];
-        for (var k = 0; k < m - 1; k++) {
-            diffs[k] = peakIdx[k + 1] - peakIdx[k];
-        }
-        sortK = 1;
-        state = 6;
-    }
-
-    function stepSortDiffs(maxOuter) {
-        var mLimit = diffs.size();
-        var end = sortK + maxOuter;
-        if (end > mLimit) { end = mLimit; }
-        while (sortK < end) {
-            var key = diffs[sortK];
-            var j = sortK - 1;
-            while (j >= 0 && diffs[j] > key) {
-                diffs[j + 1] = diffs[j];
-                j -= 1;
-            }
-            diffs[j + 1] = key;
-            sortK++;
-        }
-        if (sortK >= mLimit) {
-            var median = diffs[diffs.size() / 2];
-            if (median < MIN_LAG) { median = MIN_LAG; }
-            if (median > MAX_LAG) { median = MAX_LAG; }
-            lag = median;
-            var suppression = (lag * SUPPRESSION_FRAC).toNumber();
-            if (suppression < 5) { suppression = 5; }
-            minInterval = suppression;
-            var m = peakIdx.size();
-            order = new [m];
-            for (var k = 0; k < m; k++) { order[k] = k; }
-            sortK = 1;
-            state = 7;
-        }
-    }
-
-    function stepNmsSort(maxOuter) {
-        var mLimit = order.size();
-        if (mLimit < 2) {
-            accepted = [];
-            nmsK = 0;
-            state = 8;
-            return;
-        }
-        var end = sortK + maxOuter;
-        if (end > mLimit) { end = mLimit; }
-        while (sortK < end) {
-            var key = order[sortK];
-            var keyVal = peakHeight[key];
-            var j = sortK - 1;
-            while (j >= 0 && peakHeight[order[j]] < keyVal) {
-                order[j + 1] = order[j];
-                j -= 1;
-            }
-            order[j + 1] = key;
-            sortK++;
-        }
-        if (sortK >= mLimit) {
-            accepted = [];
-            nmsK = 0;
-            state = 8;
-        }
-    }
-
-    function stepNmsAccept(maxOuter) {
-        var mLimit = order.size();
-        var end = nmsK + maxOuter;
-        if (end > mLimit) { end = mLimit; }
-        while (nmsK < end) {
-            var pi = order[nmsK];
-            var idx = peakIdx[pi];
-            var tooClose = false;
-            for (var a = 0; a < accepted.size(); a++) {
-                var diff = idx - accepted[a];
-                if (diff < 0) { diff = -diff; }
-                if (diff < minInterval) {
-                    tooClose = true;
-                    break;
+            if (i >= w0 && i < w1) {
+                pairSum += dyn;
+                pairCount++;
+                if (pairCount == ACF_DECIMATE) {
+                    dec[decCount] = pairSum / ACF_DECIMATE - meanDyn;
+                    decCount++;
+                    pairSum = 0.0;
+                    pairCount = 0;
                 }
             }
-            if (!tooClose) { accepted.add(idx); }
-            nmsK++;
+            i++;
         }
-        if (nmsK >= mLimit) {
-            result = makeResult(accepted.size(), i0, i1, lag, meanDyn);
-            state = 5;
+        if (i >= stop) {
+            slow = null;
+            fast = null;
+            if (peakCount < 2) {
+                finish(makeResult(0, i0, i1, 0, meanDyn));
+                return;
+            }
+            acfLo = MIN_LAG / ACF_DECIMATE;
+            acfHi = MAX_LAG / ACF_DECIMATE;
+            if (acfHi > decCount - 1) { acfHi = decCount - 1; }
+            if (acfHi < acfLo) {
+                // Window too short for autocorrelation — fall back to the
+                // fastest plausible cadence.
+                startSort(MIN_LAG);
+                return;
+            }
+            corrs = new [acfHi - acfLo + 1];
+            acfLag = acfLo;
+            acfI = 0;
+            acfSum = 0.0;
+            state = ST_ACF;
         }
     }
 
-    // ── Helpers (mirror the free-function versions in DragonBoatAnalyzer) ──
+    // ── ACF: chunked autocorrelation over [acfLo, acfHi] ────────────
+    function stepAcf(budget) {
+        while (budget > 0) {
+            if (acfLag > acfHi) {
+                finishAcf();
+                return;
+            }
+            var end = decCount - acfLag;
+            var stop = acfI + budget;
+            if (stop > end) { stop = end; }
+            budget -= (stop - acfI);
+            var s = acfSum;
+            for (var k = acfI; k < stop; k++) {
+                s += dec[k] * dec[k + acfLag];
+            }
+            acfI = stop;
+            if (acfI >= end) {
+                corrs[acfLag - acfLo] = s;
+                acfLag++;
+                acfI = 0;
+                acfSum = 0.0;
+            } else {
+                acfSum = s;
+            }
+        }
+    }
 
+    function finishAcf() {
+        var best = 0;
+        for (var k = 1; k < corrs.size(); k++) {
+            if (corrs[k] > corrs[best]) { best = k; }
+        }
+        var bestLag = acfLo + best;
+
+        // Harmonic check: a strong peak near half the best lag is the
+        // true fundamental (every other stroke emphasised).
+        var half = bestLag / 2;
+        if (half >= acfLo) {
+            var kLo = half - acfLo - 2;
+            if (kLo < 0) { kLo = 0; }
+            var kHi = half - acfLo + 3;
+            if (kHi > corrs.size()) { kHi = corrs.size(); }
+            var hk = kLo;
+            for (var k = kLo + 1; k < kHi; k++) {
+                if (corrs[k] > corrs[hk]) { hk = k; }
+            }
+            if (corrs[hk] >= corrs[best] * HARMONIC_FRAC) {
+                bestLag = acfLo + hk;
+            }
+        }
+
+        var cadence = bestLag * ACF_DECIMATE;
+        if (cadence < MIN_LAG) { cadence = MIN_LAG; }
+        if (cadence > MAX_LAG) { cadence = MAX_LAG; }
+        dec = null;
+        corrs = null;
+        startSort(cadence);
+    }
+
+    // ── Sort: chunked bottom-up merge sort of peaks by height desc ──
+    function startSort(cadence) {
+        lag = cadence;
+        minInterval = (lag * SUPPRESSION_FRAC).toNumber();
+        if (minInterval < 5) { minInterval = 5; }
+
+        order = new [peakCount];
+        for (var k = 0; k < peakCount; k++) { order[k] = k; }
+        tmp = new [peakCount];
+        sortWidth = 1;
+        sortLeft = 0;
+        merging = false;
+        state = ST_SORT;
+    }
+
+    // Stable: on equal heights the earlier peak stays first.
+    function stepSort(budget) {
+        while (budget > 0) {
+            if (!merging) {
+                if (sortLeft >= peakCount) {
+                    var t = order;
+                    order = tmp;
+                    tmp = t;
+                    sortWidth *= 2;
+                    sortLeft = 0;
+                    if (sortWidth >= peakCount) {
+                        tmp = null;
+                        startNms();
+                        return;
+                    }
+                }
+                sortMid = sortLeft + sortWidth;
+                if (sortMid > peakCount) { sortMid = peakCount; }
+                sortRight = sortLeft + 2 * sortWidth;
+                if (sortRight > peakCount) { sortRight = peakCount; }
+                sortA = sortLeft;
+                sortB = sortMid;
+                sortK = sortLeft;
+                merging = true;
+            }
+            while (budget > 0 && sortK < sortRight) {
+                if (sortA < sortMid && (sortB >= sortRight
+                        || peakHeight[order[sortA]] >= peakHeight[order[sortB]])) {
+                    tmp[sortK] = order[sortA];
+                    sortA++;
+                } else {
+                    tmp[sortK] = order[sortB];
+                    sortB++;
+                }
+                sortK++;
+                budget--;
+            }
+            if (sortK >= sortRight) {
+                merging = false;
+                sortLeft = sortRight;
+            }
+        }
+    }
+
+    // ── NMS: greedy accept, tallest first ───────────────────────────
+    function startNms() {
+        taken = new [peakCount]b;
+        nmsK = 0;
+        strokeCount = 0;
+        state = ST_NMS;
+    }
+
+    // Peaks are in time order, so only neighbours within minInterval
+    // in the peak list need checking against already-accepted ones.
+    function stepNms(maxOuter) {
+        var end = nmsK + maxOuter;
+        if (end > peakCount) { end = peakCount; }
+        while (nmsK < end) {
+            var p = order[nmsK];
+            var idx = peakIdx[p];
+            var tooClose = false;
+            var j = p - 1;
+            while (j >= 0 && idx - peakIdx[j] < minInterval) {
+                if (taken[j] != 0) { tooClose = true; break; }
+                j--;
+            }
+            j = p + 1;
+            while (!tooClose && j < peakCount && peakIdx[j] - idx < minInterval) {
+                if (taken[j] != 0) { tooClose = true; break; }
+                j++;
+            }
+            if (!tooClose) {
+                taken[p] = 1;
+                strokeCount++;
+            }
+            nmsK++;
+        }
+        if (nmsK >= peakCount) {
+            loads = new [peakCount];
+            loadK = 0;
+            loadSum = 0.0;
+            state = ST_LOAD;
+        }
+    }
+
+    // ── Load: drop strokes the blade never loads after ──────────────
+    function stepLoad(maxSamples) {
+        var budget = maxSamples * ACF_OPS_PER_SAMPLE;
+        var cost = LOAD_LOOK * (2 * LOAD_MA_HALF + 1);
+        while (budget > 0 && loadK < peakCount) {
+            if (taken[loadK] != 0) {
+                var ld = loadAfter(peakIdx[loadK]);
+                loads[loadK] = ld;
+                loadSum += ld;
+                budget -= cost;
+            } else {
+                budget--;
+            }
+            loadK++;
+        }
+        if (loadK >= peakCount) {
+            // NMS always accepts the tallest peak, so strokeCount >= 1.
+            var thr = 1.0 + LOAD_FRAC * (loadSum / strokeCount - 1.0);
+            var kept = 0;
+            for (var k = 0; k < peakCount; k++) {
+                if (taken[k] != 0 && loads[k] >= thr) { kept++; }
+            }
+            finish(makeResult(kept, i0, i1, lag, meanDyn));
+        }
+    }
+
+    // Peak of the 5-sample centred MA of |a| (in g) over the LOAD_LOOK
+    // samples starting at idx.
+    function loadAfter(idx) {
+        var best = 0.0;
+        var stop = idx + LOAD_LOOK;
+        if (stop > n) { stop = n; }
+        for (var j = idx; j < stop; j++) {
+            var lo = j - LOAD_MA_HALF;
+            if (lo < 0) { lo = 0; }
+            var hi = j + LOAD_MA_HALF + 1;
+            if (hi > n) { hi = n; }
+            var s = 0;
+            for (var k = lo; k < hi; k++) {
+                s += (buf[k * 2] << 8) | buf[k * 2 + 1];
+            }
+            var v = s.toFloat() / (hi - lo) / 1000.0;
+            if (v > best) { best = v; }
+        }
+        return best;
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────
+
+    // Publish the result and drop the large working arrays.
+    function finish(res) {
+        result = res;
+        buf = null;
+        peakIdx = null;
+        peakHeight = null;
+        dec = null;
+        order = null;
+        tmp = null;
+        taken = null;
+        loads = null;
+        state = ST_DONE;
+    }
+
+    // Read raw sample idx, decode |a| in g, run it through the slow MA
+    // (high-pass) and fast MA (low-pass) sliding sums, keep the load
+    // side (bp > 0), square, and return the resulting dyn value.
     function streamDyn(idx) {
         var off = idx * 2;
         var hi = buf[off];
@@ -676,7 +660,7 @@ class AnalyzerJob {
         var slowMean = slow.pushAndMean(magG);
         var hp = magG - slowMean;
         var bp = fast.pushAndMean(hp);
-        return bp * bp;
+        return (bp > 0.0) ? bp * bp : 0.0;
     }
 
     function emptyResult() {

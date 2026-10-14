@@ -4,4 +4,4 @@
 # and swaps the no-op replay hooks in DragonBoatView for the real ones.
 base.sourcePath = source;source-replay
 base.resourcePath = resources;resources-replay
-base.excludeAnnotations = noreplay
+base.excludeAnnotations = noreplay;selftest

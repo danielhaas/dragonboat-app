@@ -1,0 +1,5 @@
+# Overlay for the analyzer self-test build. Use together with
+# monkey.jungle:
+#   monkeyc -f "monkey.jungle;selftest.jungle" -d fenix6 -o bin/selftest.prg ...
+# Includes (:selftest) code and drops the no-op (:noselftest) stubs.
+base.excludeAnnotations = noselftest;replay
