@@ -335,10 +335,10 @@ class DragonBoatView extends WatchUi.View {
         var quarterX = width / 4;
         var threeQuarterX = (width * 3) / 4;
 
-        // Row 1: Stroke Rate (left) and Heart Rate (right) - colored boxes (MUCH TALLER)
+        // Row 1: Stroke Rate (left) and Heart Rate (right) - colored boxes
         var boxWidth = (width - 50) / 2;
         var boxY = 8;
-        var boxHeight = 75;
+        var boxHeight = 55;
 
         // Stroke Rate box (green background) - covers SPM only - moved even more right
         dc.setColor(Graphics.COLOR_DK_GREEN, Graphics.COLOR_DK_GREEN);
@@ -347,7 +347,7 @@ class DragonBoatView extends WatchUi.View {
         dc.drawText(25 + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "SPM", Graphics.TEXT_JUSTIFY_CENTER);
         dc.drawText(25 + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, model.strokeRate.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Heart Rate box (blue background) - covers HR and Avg - moved even more left
+        // Heart Rate box (blue background) - moved even more left
         dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_BLUE);
         dc.fillRectangle(25 + boxWidth, boxY, boxWidth, boxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
@@ -355,34 +355,32 @@ class DragonBoatView extends WatchUi.View {
         var hrDisplay = model.heartRate > 0 ? model.heartRate.toString() : "--";
         dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, hrDisplay, Graphics.TEXT_JUSTIFY_CENTER);
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 50, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
 
         // Row 2: Speed labels and values (below boxes) - values moved even higher
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(quarterX, 85, Graphics.FONT_XTINY, "Speed", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(quarterX, 65, Graphics.FONT_XTINY, "Speed", Graphics.TEXT_JUSTIFY_CENTER);
         var currentSpeedKmh = model.currentSpeed * 3.6;
-        dc.drawText(quarterX, 90, Graphics.FONT_NUMBER_MEDIUM, currentSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(quarterX, 70, Graphics.FONT_NUMBER_MEDIUM, currentSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        dc.drawText(threeQuarterX, 85, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 65, Graphics.FONT_XTINY, "Avg", Graphics.TEXT_JUSTIFY_CENTER);
         var avgSpeed = 0.0;
         if (model.elapsedTime > 0) {
             avgSpeed = (model.totalDistance / model.elapsedTime) * 3.6;
         }
-        dc.drawText(threeQuarterX, 90, Graphics.FONT_NUMBER_MEDIUM, avgSpeed.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 70, Graphics.FONT_NUMBER_MEDIUM, avgSpeed.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
 
         // Row 3: Time and Distance - moved higher
-        dc.drawText(quarterX, 150, Graphics.FONT_XTINY, "Time", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(quarterX, 130, Graphics.FONT_XTINY, "Time", Graphics.TEXT_JUSTIFY_CENTER);
         var minutes = model.elapsedTime / 60;
         var seconds = model.elapsedTime % 60;
-        dc.drawText(quarterX, 162, Graphics.FONT_MEDIUM, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(quarterX, 142, Graphics.FONT_MEDIUM, minutes.format("%d") + ":" + seconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        dc.drawText(threeQuarterX, 150, Graphics.FONT_XTINY, "km", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(threeQuarterX, 162, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f"), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 130, Graphics.FONT_XTINY, "km", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(threeQuarterX, 142, Graphics.FONT_MEDIUM, (model.totalDistance / 1000.0).format("%.2f"), Graphics.TEXT_JUSTIFY_CENTER);
 
         // Row 4: Pieces and Current Piece - Bottom of screen, extending to bottom
         var bottomBoxWidth = (width - 25) / 2;
-        var bottomY = 218;
+        var bottomY = 198;
         var bottomBoxHeight = height - bottomY; // Extend to bottom of screen
 
         // Pieces box - left side at bottom with purple background
@@ -390,8 +388,8 @@ class DragonBoatView extends WatchUi.View {
         dc.fillRectangle(10, bottomY, bottomBoxWidth, bottomBoxHeight);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         var leftBoxCenterX = 10 + bottomBoxWidth / 2;
-        dc.drawText(leftBoxCenterX, 220, Graphics.FONT_XTINY, "Pieces", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(leftBoxCenterX + 8, 232, Graphics.FONT_SMALL, model.pieces.size().toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(leftBoxCenterX, 200, Graphics.FONT_XTINY, "Pieces", Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(leftBoxCenterX + 8, 212, Graphics.FONT_SMALL, model.pieces.size().toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
         // Current piece box - right side at bottom with orange background
         dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_ORANGE);
@@ -403,15 +401,15 @@ class DragonBoatView extends WatchUi.View {
             var pieceDuration = displayPiece.getCurrentDuration().toNumber();
             var pieceMinutes = pieceDuration / 60;
             var pieceSeconds = pieceDuration % 60;
-            dc.drawText(rightBoxCenterX, 220, Graphics.FONT_XTINY, "Piece", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(rightBoxCenterX - 8, 232, Graphics.FONT_SMALL, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(rightBoxCenterX, 200, Graphics.FONT_XTINY, "Piece", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(rightBoxCenterX - 8, 212, Graphics.FONT_SMALL, pieceMinutes.format("%d") + ":" + pieceSeconds.format("%02d"), Graphics.TEXT_JUSTIFY_CENTER);
         }
 
         // Time of day at bottom center
         var clockTime = System.getClockTime();
         var timeStr = clockTime.hour.format("%02d") + ":" + clockTime.min.format("%02d");
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(width / 2, 192, Graphics.FONT_SMALL, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(width / 2, 172, Graphics.FONT_SMALL, timeStr, Graphics.TEXT_JUSTIFY_CENTER);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
     }
 
