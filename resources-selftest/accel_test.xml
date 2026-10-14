@@ -1,0 +1,9 @@
+<resources>
+    <jsonData id="accel_test_0" filename="accel_test_0.json"/>
+    <jsonData id="accel_test_1" filename="accel_test_1.json"/>
+    <jsonData id="accel_test_2" filename="accel_test_2.json"/>
+    <jsonData id="accel_test_3" filename="accel_test_3.json"/>
+    <jsonData id="accel_test_4" filename="accel_test_4.json"/>
+    <jsonData id="accel_test_5" filename="accel_test_5.json"/>
+    <jsonData id="accel_test_6" filename="accel_test_6.json"/>
+</resources>

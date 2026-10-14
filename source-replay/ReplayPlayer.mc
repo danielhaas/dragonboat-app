@@ -23,6 +23,7 @@ class ReplayPlayer {
     var chunk;      // hex strings for the loaded chunk (one per second)
     var chunkIdx;
     var ignoredLiveEvents = 0;  // simulator GPS/HR events dropped by the view
+    var tailSec = 0;            // seconds since the data ended
 
     function initialize(m) {
         model = m;
@@ -71,6 +72,11 @@ class ReplayPlayer {
         // freeze and the piece-end timeout would never fire.
         if (sec >= ReplayData.NUM_SECONDS) {
             chunk = null;
+            tailSec++;
+            // By now the last piece has ended and its analysis finished.
+            if (tailSec == 15) {
+                logPieces();
+            }
             WatchUi.requestUpdate();
             return;
         }
@@ -121,6 +127,15 @@ class ReplayPlayer {
                 " pieces=" + model.pieces.size());
         }
         WatchUi.requestUpdate();
+    }
+
+    function logPieces() {
+        for (var k = 0; k < model.pieces.size(); k++) {
+            var p = model.pieces[k];
+            System.println("Piece " + (k + 1) + ": live=" + p.strokeCount +
+                " analyzed=" + p.analyzedStrokes +
+                " shown=" + p.getBestStrokeCount());
+        }
     }
 }
 

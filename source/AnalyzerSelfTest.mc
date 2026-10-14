@@ -2,6 +2,7 @@ using Toybox.Lang;
 using Toybox.StringUtil;
 using Toybox.System;
 using Toybox.Timer;
+using Toybox.WatchUi;
 
 // Runs AnalyzerJob over the recording baked into AccelTestData (see
 // extract_accel_blob.py) exactly the way DragonBoatModel does — chunked
@@ -17,20 +18,36 @@ class AnalyzerSelfTest {
     var steps;
     var maxStepMs;
     var startMs;
+    var buf;
+    var partIdx;
+    var bufPos;
 
     function initialize() {
     }
 
+    // The blob is decoded across timer ticks too: copying all of it in
+    // one call trips the watchdog.
     function start() {
-        var buf = decodeBlob();
-        System.println("SELFTEST start: " + AccelTestData.NUM_SAMPLES
-            + " samples, expect " + AccelTestData.EXPECTED_STROKES + " strokes");
-        job = new AnalyzerJob(buf, AccelTestData.NUM_SAMPLES);
-        steps = 0;
-        maxStepMs = 0;
-        startMs = System.getTimer();
+        buf = new [AccelTestData.NUM_BYTES]b;
+        partIdx = 0;
+        bufPos = 0;
         timer = new Timer.Timer();
-        timer.start(method(:tick), 30, false);
+        timer.start(method(:decodeTick), 30, false);
+    }
+
+    function decodeTick() as Void {
+        if (decodeSome()) {
+            System.println("SELFTEST start: " + AccelTestData.NUM_SAMPLES
+                + " samples, expect " + AccelTestData.EXPECTED_STROKES + " strokes");
+            job = new AnalyzerJob(buf, AccelTestData.NUM_SAMPLES);
+            buf = null;
+            steps = 0;
+            maxStepMs = 0;
+            startMs = System.getTimer();
+            timer.start(method(:tick), 30, false);
+        } else {
+            timer.start(method(:decodeTick), 30, false);
+        }
     }
 
     function tick() as Void {
@@ -54,15 +71,23 @@ class AnalyzerSelfTest {
             + " totalMs=" + (System.getTimer() - startMs));
     }
 
-    function decodeBlob() {
-        var out = new [0]b;
-        var parts = AccelTestData.HEX_PARTS;
+    // Decodes one jsonData chunk per call into the preallocated buffer.
+    // Only that chunk is on the heap meanwhile; growing the buffer with
+    // addAll() or holding the whole blob leaves the analyzer too little
+    // memory on a fenix 6. Returns true when the whole blob is decoded.
+    function decodeSome() {
+        var parts = WatchUi.loadResource(AccelTestData.CHUNKS[partIdx]) as Lang.Array;
         for (var k = 0; k < parts.size(); k++) {
-            out.addAll(StringUtil.convertEncodedString(parts[k], {
+            var bytes = StringUtil.convertEncodedString(parts[k], {
                 :fromRepresentation => StringUtil.REPRESENTATION_STRING_HEX,
                 :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY,
-            }));
+            }) as Lang.ByteArray;
+            for (var b = 0; b < bytes.size(); b++) {
+                buf[bufPos] = bytes[b];
+                bufPos++;
+            }
         }
-        return out;
+        partIdx++;
+        return partIdx >= AccelTestData.CHUNKS.size();
     }
 }
