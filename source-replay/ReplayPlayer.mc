@@ -122,6 +122,13 @@ class ReplayPlayer {
             model.updatePosition(pos);
         }
 
+        var p = model.currentPiece;
+        if (p != null && sec % 5 == 0) {
+            System.println("  t=" + sec + "s piece live=" + p.strokeCount +
+                " shown=" + p.getBestStrokeCount() +
+                " analyzed=" + p.analyzedStrokes + "@" + p.analyzedAtLiveStrokes);
+        }
+
         if (sec == ReplayData.NUM_SECONDS) {
             System.println("Replay finished: totalStrokes=" + model.totalStrokes +
                 " pieces=" + model.pieces.size());

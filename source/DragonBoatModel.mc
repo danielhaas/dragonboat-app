@@ -40,6 +40,7 @@ class Piece {
     // Offline-analyzer results (populated by AnalyzerJob during/after the piece).
     // These override the live strokeCount / duration when present.
     var analyzedStrokes;          // Stroke count from offline detector (null until run)
+    var analyzedAtLiveStrokes;    // Live strokeCount when that run's snapshot was taken
     var analyzedActiveStartMs;    // Active region start, ms into the piece
     var analyzedActiveEndMs;      // Active region end, ms into the piece
     var analyzedActiveDurationMs; // analyzedActiveEndMs - analyzedActiveStartMs
@@ -75,6 +76,7 @@ class Piece {
 
         // Offline analyzer results — null until an AnalyzerJob completes
         analyzedStrokes = null;
+        analyzedAtLiveStrokes = 0;
         analyzedActiveStartMs = 0;
         analyzedActiveEndMs = 0;
         analyzedActiveDurationMs = 0;
@@ -107,10 +109,17 @@ class Piece {
         }
     }
 
-    // Best stroke count: analyzed value if available, otherwise live count.
+    // Best stroke count: the latest analyzed count plus the live strokes
+    // counted since that run's snapshot, so the number advances with every
+    // stroke instead of freezing between analyzer runs and then jumping.
+    // Each run replaces the live estimate up to its snapshot; once the
+    // final run after the piece ends completes, the count is fully analyzed
+    // (apart from strokes past the 5-minute buffer, which stay live).
     function getBestStrokeCount() {
         if (analyzedStrokes != null) {
-            return analyzedStrokes;
+            var sinceSnapshot = strokeCount - analyzedAtLiveStrokes;
+            if (sinceSnapshot < 0) { sinceSnapshot = 0; }
+            return analyzedStrokes + sinceSnapshot;
         }
         return strokeCount;
     }
@@ -301,6 +310,10 @@ class DragonBoatModel {
     var pieceAnalyzeTimer;
     var pieceAnalyzeJob;
     var pieceAnalyzePiece;   // the Piece whose results we'll populate
+    var pieceAnalyzeLiveStrokes;  // that Piece's live count at the snapshot
+    // Live count when the sample buffer filled up (null until then).
+    // Snapshots can't grow past that point, so later strokes stay live.
+    var liveStrokesAtBufferFull;
     // Chunk size is tuned for a real fenix watch: ~150 samples × ~1–2 ms
     // per sample leaves comfortable margin under the ~1.5 s watchdog.
     const PIECE_CHUNK_SAMPLES = 150;
@@ -353,6 +366,7 @@ class DragonBoatModel {
         // heap fragmentation from reallocating large ByteArrays.
         sampleBuffer = new [SAMPLE_BUFFER_BYTES]b;
         numBufferedSamples = 0;
+        liveStrokesAtBufferFull = null;
 
         pieceAnalyzeTimer = null;
         pieceAnalyzeJob = null;
@@ -573,6 +587,7 @@ class DragonBoatModel {
                 pieceActive = true;
                 // Reset the per-piece sample buffer for offline analysis
                 numBufferedSamples = 0;
+                liveStrokesAtBufferFull = null;
                 startPieceIncrementalAnalysis();
             }
 
@@ -654,6 +669,7 @@ class DragonBoatModel {
         pieceActive = false;
         lastPieceStrokeTime = 0;
         numBufferedSamples = 0;
+        liveStrokesAtBufferFull = null;
     }
 
     // A short burst of strokes while the boat never moved: dock noise,
@@ -674,6 +690,8 @@ class DragonBoatModel {
         var snapshot = sampleBuffer.slice(0, snapshotBytes);
         pieceAnalyzeJob = new AnalyzerJob(snapshot, numBufferedSamples);
         pieceAnalyzePiece = piece;
+        pieceAnalyzeLiveStrokes = (liveStrokesAtBufferFull != null)
+            ? liveStrokesAtBufferFull : piece.strokeCount;
         if (pieceAnalyzeTimer == null) {
             pieceAnalyzeTimer = new Timer.Timer();
         }
@@ -717,6 +735,7 @@ class DragonBoatModel {
             if (done) {
                 var result = pieceAnalyzeJob.getResult();
                 pieceAnalyzePiece.analyzedStrokes = result[:strokes];
+                pieceAnalyzePiece.analyzedAtLiveStrokes = pieceAnalyzeLiveStrokes;
                 pieceAnalyzePiece.analyzedActiveStartMs = result[:activeStartMs];
                 pieceAnalyzePiece.analyzedActiveEndMs = result[:activeEndMs];
                 pieceAnalyzePiece.analyzedActiveDurationMs = result[:activeDurationMs];
@@ -747,6 +766,9 @@ class DragonBoatModel {
         sampleBuffer[off]     = (magMg >> 8) & 0xFF;
         sampleBuffer[off + 1] = magMg & 0xFF;
         numBufferedSamples++;
+        if (numBufferedSamples == SAMPLE_BUFFER_MAX_SAMPLES && currentPiece != null) {
+            liveStrokesAtBufferFull = currentPiece.strokeCount;
+        }
     }
     
     // Toggle piece detection on/off
