@@ -226,11 +226,12 @@ class DragonBoatView extends WatchUi.View {
             dc.drawText(threeQuarterX, 125, Graphics.FONT_XTINY, "m", Graphics.TEXT_JUSTIFY_CENTER);
             dc.drawText(threeQuarterX, 135, Graphics.FONT_NUMBER_MEDIUM, displayPiece.distance.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-            // Bottom row: Max Speed, Max HR, Avg HR
-            var thirdX = width / 6;
+            // Bottom row: Max Speed, Max HR, Avg HR. The outer columns sit at
+            // the quarter marks: further out, the round screen clips them
+            // at this height (e.g. "13.8" showed only as "8").
             var maxSpeedKmh = displayPiece.maxSpeed * 3.6;
-            dc.drawText(thirdX, 195, Graphics.FONT_XTINY, "Max Spd", Graphics.TEXT_JUSTIFY_CENTER);
-            dc.drawText(thirdX, 210, Graphics.FONT_SMALL, maxSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 195, Graphics.FONT_XTINY, "Max Spd", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(quarterX, 210, Graphics.FONT_SMALL, maxSpeedKmh.format("%.1f"), Graphics.TEXT_JUSTIFY_CENTER);
 
             dc.drawText(centerX, 195, Graphics.FONT_XTINY, "Max HR", Graphics.TEXT_JUSTIFY_CENTER);
             if (displayPiece.maxHeartRate > 0) {
@@ -239,12 +240,11 @@ class DragonBoatView extends WatchUi.View {
             dc.drawText(centerX, 210, Graphics.FONT_SMALL, displayPiece.maxHeartRate > 0 ? displayPiece.maxHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
 
-            var fiveSixthX = (width * 5) / 6;
-            dc.drawText(fiveSixthX, 195, Graphics.FONT_XTINY, "Avg HR", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(threeQuarterX, 195, Graphics.FONT_XTINY, "Avg HR", Graphics.TEXT_JUSTIFY_CENTER);
             if (displayPiece.avgHeartRate > 0) {
                 dc.setColor(getHeartRateColor(displayPiece.avgHeartRate), Graphics.COLOR_TRANSPARENT);
             }
-            dc.drawText(fiveSixthX, 210, Graphics.FONT_SMALL, displayPiece.avgHeartRate > 0 ? displayPiece.avgHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
+            dc.drawText(threeQuarterX, 210, Graphics.FONT_SMALL, displayPiece.avgHeartRate > 0 ? displayPiece.avgHeartRate.toString() : "--", Graphics.TEXT_JUSTIFY_CENTER);
             dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         } else {
             // No active piece
@@ -347,13 +347,15 @@ class DragonBoatView extends WatchUi.View {
         dc.drawText(25 + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "SPM", Graphics.TEXT_JUSTIFY_CENTER);
         dc.drawText(25 + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, model.strokeRate.format("%.0f"), Graphics.TEXT_JUSTIFY_CENTER);
 
-        // Heart Rate box (blue background) - moved even more left
-        dc.setColor(Graphics.COLOR_BLUE, Graphics.COLOR_BLUE);
+        // Heart Rate box - background shows the current HR zone (blue
+        // while there's no reading). Text is black so it stays readable
+        // on the light zone colors (grey, yellow).
+        var hrBoxColor = model.heartRate > 0 ? getHeartRateColor(model.heartRate) : Graphics.COLOR_BLUE;
+        dc.setColor(hrBoxColor, hrBoxColor);
         dc.fillRectangle(25 + boxWidth, boxY, boxWidth, boxHeight);
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 4, Graphics.FONT_XTINY, "HR", Graphics.TEXT_JUSTIFY_CENTER);
         var hrDisplay = model.heartRate > 0 ? model.heartRate.toString() : "--";
-        dc.setColor(Graphics.COLOR_BLACK, Graphics.COLOR_TRANSPARENT);
         dc.drawText(25 + boxWidth + boxWidth / 2, boxY + 20, Graphics.FONT_SMALL, hrDisplay, Graphics.TEXT_JUSTIFY_CENTER);
 
         // Row 2: Speed labels and values (below boxes) - values moved even higher
