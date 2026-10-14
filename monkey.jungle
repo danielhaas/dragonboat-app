@@ -5,3 +5,7 @@ base.sourcePath = source
 
 # Resources
 base.resourcePath = resources
+
+# Analyzer self-test code is only compiled into the self-test build:
+#   monkeyc -f "monkey.jungle;selftest.jungle" ...
+base.excludeAnnotations = selftest

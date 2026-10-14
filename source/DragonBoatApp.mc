@@ -9,6 +9,18 @@ class DragonBoatApp extends Application.AppBase {
 
     // onStart() is called on application start up
     function onStart(state) {
+        startSelfTest();
+    }
+
+    // Self-test build only (selftest.jungle): run the baked-in recording
+    // through AnalyzerJob and log the stroke count.
+    (:selftest)
+    function startSelfTest() {
+        new AnalyzerSelfTest().start();
+    }
+
+    (:noselftest)
+    function startSelfTest() {
     }
 
     // onStop() is called when your application is exiting
