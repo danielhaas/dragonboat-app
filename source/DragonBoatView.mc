@@ -9,6 +9,7 @@ using Toybox.UserProfile;
 class DragonBoatView extends WatchUi.View {
     var model;
     var viewMode; // 0 = overall, 1 = current piece, 2 = all metrics, 3 = optimized grid
+    var replay; // simulator replay build only (sim.jungle)
 
     function initialize() {
         View.initialize();
@@ -31,6 +32,43 @@ class DragonBoatView extends WatchUi.View {
             }
         };
         Sensor.registerSensorDataListener(method(:onAccelData), accelOptions);
+
+        startReplay();
+    }
+
+    // Simulator replay build: feed a recorded session through the model.
+    (:replay)
+    function startReplay() {
+        replay = new ReplayPlayer(model);
+        replay.start();
+    }
+
+    (:noreplay)
+    function startReplay() {
+    }
+
+    (:replay)
+    function drawReplayStatus(dc) {
+        dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(dc.getWidth() / 2, dc.getHeight() - 22, Graphics.FONT_XTINY,
+            replay.getStatus(), Graphics.TEXT_JUSTIFY_CENTER);
+    }
+
+    (:noreplay)
+    function drawReplayStatus(dc) {
+    }
+
+    // In the replay build the recording is the only data source; the
+    // simulator's own GPS/HR events would overwrite replayed values.
+    (:replay)
+    function ignoreLiveSensors() {
+        replay.ignoredLiveEvents++;
+        return true;
+    }
+
+    (:noreplay)
+    function ignoreLiveSensors() {
+        return false;
     }
 
     // Called when this View is brought to the foreground
@@ -58,6 +96,7 @@ class DragonBoatView extends WatchUi.View {
         } else {
             drawOptimizedGridView(dc);
         }
+        drawReplayStatus(dc);
     }
 
     // Get color for heart rate based on user-configured HR zones
@@ -526,12 +565,14 @@ class DragonBoatView extends WatchUi.View {
 
     // Position callback
     function onPosition(info as Position.Info) as Void {
+        if (ignoreLiveSensors()) { return; }
         model.updatePosition(info);
         WatchUi.requestUpdate();
     }
 
     // Sensor callback for heart rate
     function onSensor(sensorInfo as Sensor.Info) as Void {
+        if (ignoreLiveSensors()) { return; }
         // Update heart rate if available
         if (sensorInfo has :heartRate && sensorInfo.heartRate != null) {
             model.heartRate = sensorInfo.heartRate;
@@ -541,6 +582,7 @@ class DragonBoatView extends WatchUi.View {
 
     // Accelerometer data callback
     function onAccelData(sensorData as Sensor.SensorData) as Void {
+        if (ignoreLiveSensors()) { return; }
         if (sensorData has :accelerometerData && sensorData.accelerometerData != null) {
             model.updateAccelerometer(sensorData.accelerometerData);
             WatchUi.requestUpdate();
