@@ -40,7 +40,6 @@ class AnalyzerSelfTest {
             System.println("SELFTEST start: " + AccelTestData.NUM_SAMPLES
                 + " samples, expect " + AccelTestData.EXPECTED_STROKES + " strokes");
             job = new AnalyzerJob(buf, AccelTestData.NUM_SAMPLES);
-            buf = null;
             steps = 0;
             maxStepMs = 0;
             startMs = System.getTimer();
@@ -69,6 +68,11 @@ class AnalyzerSelfTest {
             + " steps=" + steps
             + " maxStepMs=" + maxStepMs
             + " totalMs=" + (System.getTimer() - startMs));
+
+        // Then check how much session history fits (see MemoryStressTest).
+        job = null;
+        new MemoryStressTest(buf).start();
+        buf = null;
     }
 
     // Decodes one jsonData chunk per call into the preallocated buffer.

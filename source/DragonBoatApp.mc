@@ -2,6 +2,7 @@ using Toybox.Application;
 using Toybox.WatchUi;
 
 class DragonBoatApp extends Application.AppBase {
+    var mainView;  // for the self-test build's memory stress test
 
     function initialize() {
         AppBase.initialize();
@@ -30,6 +31,7 @@ class DragonBoatApp extends Application.AppBase {
     // Return the initial view of your application here
     function getInitialView() {
         var view = new DragonBoatView();
+        mainView = view;
         var delegate = new DragonBoatDelegate(view);
         return [view, delegate];
     }

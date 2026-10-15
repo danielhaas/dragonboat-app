@@ -131,15 +131,16 @@ class ReplayPlayer {
 
         if (sec == ReplayData.NUM_SECONDS) {
             System.println("Replay finished: totalStrokes=" + model.totalStrokes +
-                " pieces=" + model.pieces.size());
+                " pieces=" + model.pieceCount);
         }
         WatchUi.requestUpdate();
     }
 
+    // The model keeps only the last finished piece.
     function logPieces() {
-        for (var k = 0; k < model.pieces.size(); k++) {
-            var p = model.pieces[k];
-            System.println("Piece " + (k + 1) + ": live=" + p.strokeCount +
+        var p = model.lastPiece;
+        if (p != null) {
+            System.println("Piece " + model.pieceCount + " (last): live=" + p.strokeCount +
                 " analyzed=" + p.analyzedStrokes +
                 " shown=" + p.getBestStrokeCount());
         }

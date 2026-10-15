@@ -19,12 +19,17 @@ class Piece {
     var startTimeMs; // Raw milliseconds for display precision
     var endTimeMs; // Raw milliseconds for display precision
 
-    // Historical data for graphs
+    // Historical data for graphs. Only the current and the last finished
+    // piece are kept (see DragonBoatModel.archivePiece()), and each holds
+    // at most HISTORY_MAX samples (~6 KB): when full, neighbouring pairs
+    // are averaged and the sample interval doubles, so the graph still
+    // covers the whole piece. Uncapped (~10 bytes/s), a single piece of
+    // ~55 min left too little memory for its final analysis.
     var speedHistory;      // Array of speed samples
     var strokeRateHistory; // Array of stroke rate samples
-    var sampleTimes;       // Array of sample timestamps
     var lastSampleTime;    // Time of last sample
-    const SAMPLE_INTERVAL = 1000; // 1 second between samples
+    var sampleInterval;    // ms between samples: 1000, doubled per compaction
+    const HISTORY_MAX = 600;
 
     // Heart rate tracking
     var maxHeartRate;       // Highest HR seen during piece
@@ -61,8 +66,8 @@ class Piece {
         // Initialize history arrays
         speedHistory = [];
         strokeRateHistory = [];
-        sampleTimes = [];
         lastSampleTime = startTime;
+        sampleInterval = 1000;
 
         // Heart rate tracking
         maxHeartRate = 0;
@@ -137,16 +142,43 @@ class Piece {
         return analyzedStrokes != null;
     }
 
+    // Halve the history by averaging neighbouring pairs; from now on one
+    // sample covers twice as long. An odd last sample is kept as is.
+    function compactHistory() {
+        var n = speedHistory.size();
+        var half = (n + 1) / 2;
+        var speeds = new [half];
+        var rates = new [half];
+        for (var i = 0; i < half; i++) {
+            var a = 2 * i;
+            if (a + 1 < n) {
+                speeds[i] = (speedHistory[a] + speedHistory[a + 1]) / 2.0;
+                rates[i] = (strokeRateHistory[a] + strokeRateHistory[a + 1]) / 2.0;
+            } else {
+                speeds[i] = speedHistory[a];
+                rates[i] = strokeRateHistory[a];
+            }
+        }
+        speedHistory = speeds;
+        strokeRateHistory = rates;
+        if (startPhaseEndIndex != null) {
+            startPhaseEndIndex = startPhaseEndIndex / 2;
+        }
+        sampleInterval *= 2;
+    }
+
     // Record a sample for graphs
     function recordSample(speed, strokeRate, heartRate) {
         var currentTime = System.getTimer();
 
         // Only record if enough time has passed since last sample
-        if (currentTime - lastSampleTime >= SAMPLE_INTERVAL) {
+        if (currentTime - lastSampleTime >= sampleInterval) {
             speedHistory.add(speed);
             strokeRateHistory.add(strokeRate);
-            sampleTimes.add((currentTime - startTime) / 1000.0); // Relative time in seconds
             lastSampleTime = currentTime;
+            if (speedHistory.size() >= HISTORY_MAX) {
+                compactHistory();
+            }
 
             // Heart rate tracking
             if (heartRate > maxHeartRate) {
@@ -241,7 +273,10 @@ class DragonBoatModel {
 
     // Current piece tracking
     var currentPiece;
-    var pieces;
+    // Finished pieces: only the count and the last one are kept (see
+    // archivePiece); per-piece laps are in the FIT file.
+    var pieceCount;
+    var lastPiece;
     var pieceActive; // Is there an active piece
     var pieceDetectionEnabled; // Toggle for piece detection
 
@@ -339,7 +374,8 @@ class DragonBoatModel {
         elapsedTime = 0;
         heartRate = 0;
 
-        pieces = [];
+        pieceCount = 0;
+        lastPiece = null;
         currentPiece = null; // No piece until first stroke
         pieceActive = false;
         pieceDetectionEnabled = true; // Default to enabled
@@ -659,7 +695,7 @@ class DragonBoatModel {
             // stale vs. the full buffer we have right now).
             startAnalyzerJob(currentPiece);
 
-            pieces.add(currentPiece);
+            archivePiece(currentPiece);
 
             if (session != null && session.isRecording()) {
                 session.addLap();
@@ -670,6 +706,17 @@ class DragonBoatModel {
         lastPieceStrokeTime = 0;
         numBufferedSamples = 0;
         liveStrokesAtBufferFull = null;
+    }
+
+    // Add a finished piece to the session. Only the last finished piece
+    // can still be displayed (getDisplayPiece), so earlier ones are
+    // dropped. Keeping them all (~450 bytes each, plus ~13 bytes per
+    // second of graph history) grew memory for the whole session until a
+    // 5-minute piece's final analysis ran out of memory, after ~35 min of
+    // paddling.
+    function archivePiece(piece) {
+        lastPiece = piece;
+        pieceCount++;
     }
 
     // A short burst of strokes while the boat never moved: dock noise,
@@ -792,10 +839,8 @@ class DragonBoatModel {
     function getDisplayPiece() {
         if (currentPiece != null) {
             return currentPiece;
-        } else if (pieces.size() > 0) {
-            return pieces[pieces.size() - 1];
         }
-        return null;
+        return lastPiece;
     }
 
     // Calculate distance between two positions using Haversine formula

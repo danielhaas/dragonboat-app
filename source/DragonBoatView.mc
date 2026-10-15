@@ -391,7 +391,7 @@ class DragonBoatView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         var leftBoxCenterX = 10 + bottomBoxWidth / 2;
         dc.drawText(leftBoxCenterX, 200, Graphics.FONT_XTINY, "Pieces", Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(leftBoxCenterX + 8, 212, Graphics.FONT_SMALL, model.pieces.size().toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(leftBoxCenterX + 8, 212, Graphics.FONT_SMALL, model.pieceCount.toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
         // Current piece box - right side at bottom with orange background
         dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_ORANGE);
