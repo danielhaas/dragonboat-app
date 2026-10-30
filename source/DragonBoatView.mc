@@ -563,6 +563,15 @@ class DragonBoatView extends WatchUi.View {
     function onHide() {
     }
 
+    // Turn off every sensor this view enabled and stop the model's timers.
+    function shutdown() {
+        Position.enableLocationEvents(Position.LOCATION_DISABLE, null);
+        Sensor.unregisterSensorDataListener();
+        Sensor.enableSensorEvents(null);
+        Sensor.setEnabledSensors([]);
+        model.shutdown();
+    }
+
     // Position callback
     function onPosition(info as Position.Info) as Void {
         if (ignoreLiveSensors()) { return; }

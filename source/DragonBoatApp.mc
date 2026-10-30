@@ -2,7 +2,7 @@ using Toybox.Application;
 using Toybox.WatchUi;
 
 class DragonBoatApp extends Application.AppBase {
-    var mainView;  // for the self-test build's memory stress test
+    var mainView;  // for onStop cleanup and the self-test memory stress test
 
     function initialize() {
         AppBase.initialize();
@@ -26,6 +26,11 @@ class DragonBoatApp extends Application.AppBase {
 
     // onStop() is called when your application is exiting
     function onStop(state) {
+        // Release GPS, HR and accelerometer explicitly. Some firmware keeps
+        // them powered after exit if the app doesn't, draining the battery.
+        if (mainView != null) {
+            mainView.shutdown();
+        }
     }
 
     // Return the initial view of your application here
