@@ -784,6 +784,16 @@ class DragonBoatModel {
         }
     }
 
+    // Stop all timers so nothing keeps firing after exit.
+    function shutdown() {
+        stopPieceIncrementalAnalysis();
+        if (pieceAnalyzeTimer != null) {
+            pieceAnalyzeTimer.stop();
+        }
+        pieceAnalyzeJob = null;
+        pieceAnalyzePiece = null;
+    }
+
     // Discard the session
     function discardSession() {
         if (session != null && session.isRecording()) {
