@@ -306,6 +306,8 @@ class DragonBoatModel {
 
     // Last position for distance calculation
     var lastPosition;
+    var lastPositionTime;
+    const MAX_PLAUSIBLE_SPEED_MS = 10.0; // ~36 km/h, well above dragon boat speed
 
 
     function initialize() {
@@ -391,16 +393,28 @@ class DragonBoatModel {
             }
         }
 
-        // Calculate distance if we have a previous position
-        if (info has :position && info.position != null) {
+        // Calculate distance if we have a previous position. Fixes below
+        // USABLE quality (incl. the "last known" position GPS reports while
+        // acquiring) are skipped, and the next good fix starts a new segment.
+        var goodFix = info has :accuracy && info.accuracy != null
+            && info.accuracy >= Position.QUALITY_USABLE;
+        if (!goodFix) {
+            lastPosition = null;
+        } else if (info has :position && info.position != null) {
+            var now = System.getTimer();
             if (lastPosition != null) {
                 var distance = calculateDistance(lastPosition, info.position);
-                totalDistance += distance;
-                if (currentPiece != null && pieceActive) {
-                    currentPiece.distance += distance;
+                var dtSec = (now - lastPositionTime) / 1000.0;
+                // Drop jumps faster than any boat can move (GPS glitches).
+                if (dtSec > 0 && distance <= MAX_PLAUSIBLE_SPEED_MS * dtSec) {
+                    totalDistance += distance;
+                    if (currentPiece != null && pieceActive) {
+                        currentPiece.distance += distance;
+                    }
                 }
             }
             lastPosition = info.position;
+            lastPositionTime = now;
         }
 
         // Update piece max speed
