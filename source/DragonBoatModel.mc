@@ -6,6 +6,7 @@ using Toybox.Activity;
 using Toybox.FitContributor;
 using Toybox.Timer;
 using Toybox.WatchUi;
+using Toybox.Attention;
 
 // Class to track a single piece
 class Piece {
@@ -292,6 +293,14 @@ class DragonBoatModel {
     const STATIONARY_MAX_STROKES = 15;     // fewer strokes than this...
     const STATIONARY_MAX_SPEED = 0.83;     // ...and never above 3 km/h (m/s)
 
+    // Pieces with fewer strokes than this are dropped entirely.
+    const MIN_PIECE_STROKES = 10;
+
+    // Vibrate (and beep) every STROKE_MILESTONE strokes into a piece,
+    // since the screen can't be watched while paddling.
+    const STROKE_MILESTONE = 100;
+    var lastStrokeMilestone; // milestones already signalled this piece
+
     // Stroke detection
     //
     // Look-ahead local-maximum detector. Each sample we compute |a| in g,
@@ -383,6 +392,7 @@ class DragonBoatModel {
         pieceDetectionEnabled = true; // Default to enabled
 
         lastPieceStrokeTime = 0;
+        lastStrokeMilestone = 0;
 
         strokeBuffer = [];
         lastStrokeTime = 0;
@@ -638,12 +648,14 @@ class DragonBoatModel {
                 // Reset the per-piece sample buffer for offline analysis
                 numBufferedSamples = 0;
                 liveStrokesAtBufferFull = null;
+                lastStrokeMilestone = 0;
                 startPieceIncrementalAnalysis();
             }
 
             // Add stroke to current piece
             currentPiece.strokeCount++;
             lastPieceStrokeTime = strokeTime;
+            checkStrokeMilestone();
         }
 
         // Update stroke rate (strokes per minute)
@@ -700,7 +712,7 @@ class DragonBoatModel {
     function endPiece() {
         stopPieceIncrementalAnalysis();
 
-        if (currentPiece != null && currentPiece.strokeCount >= 3
+        if (currentPiece != null && currentPiece.strokeCount >= MIN_PIECE_STROKES
                 && !isStationaryBurst(currentPiece)) {
             currentPiece.finalize(lastPieceStrokeTime);
 
@@ -731,6 +743,25 @@ class DragonBoatModel {
     function archivePiece(piece) {
         lastPiece = piece;
         pieceCount++;
+    }
+
+    // Signal each STROKE_MILESTONE crossed by the displayed stroke count of
+    // the active piece. That count can jump when an analyzer run lands, so
+    // compare milestone numbers rather than testing for an exact multiple.
+    function checkStrokeMilestone() {
+        if (currentPiece == null) {
+            return;
+        }
+        var milestone = currentPiece.getBestStrokeCount() / STROKE_MILESTONE;
+        if (milestone > lastStrokeMilestone) {
+            lastStrokeMilestone = milestone;
+            if (Attention has :vibrate) {
+                Attention.vibrate([new Attention.VibeProfile(100, 600)]);
+            }
+            if (Attention has :playTone) {
+                Attention.playTone(Attention.TONE_LAP);
+            }
+        }
     }
 
     // A short burst of strokes while the boat never moved: dock noise,
@@ -802,6 +833,9 @@ class DragonBoatModel {
                 pieceAnalyzePiece.analyzedActiveDurationMs = result[:activeDurationMs];
                 pieceAnalyzePiece.analyzedAvgSpm = result[:avgSpm];
                 pieceAnalyzePiece.analyzedCadenceMs = result[:cadenceMs];
+                if (pieceAnalyzePiece == currentPiece) {
+                    checkStrokeMilestone();
+                }
                 pieceAnalyzeJob = null;
                 pieceAnalyzePiece = null;
                 WatchUi.requestUpdate();
