@@ -183,7 +183,7 @@ class DragonBoatView extends WatchUi.View {
         var threeQuarterX = (width * 3) / 4;
 
         // Title
-        var isCompleted = !model.pieceActive && model.getDisplayPiece() != null;
+        var isCompleted = !model.isActivePieceShown() && model.getDisplayPiece() != null;
         dc.drawText(centerX, 8, Graphics.FONT_TINY, isCompleted ? "COMPLETED PIECE" : "CURRENT PIECE", Graphics.TEXT_JUSTIFY_CENTER);
 
         var displayPiece = model.getDisplayPiece();

@@ -884,11 +884,18 @@ class DragonBoatModel {
     }
     
     // Get the piece to display (current active piece or last completed piece)
+    // The active piece only replaces the last one on screen once it has
+    // MIN_PIECE_STROKES strokes; shorter bursts are dropped at endPiece()
+    // and must not flash up meanwhile.
     function getDisplayPiece() {
-        if (currentPiece != null) {
+        if (isActivePieceShown()) {
             return currentPiece;
         }
         return lastPiece;
+    }
+
+    function isActivePieceShown() {
+        return currentPiece != null && currentPiece.strokeCount >= MIN_PIECE_STROKES;
     }
 
     // Calculate distance between two positions using Haversine formula
